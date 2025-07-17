@@ -76,6 +76,7 @@ services:
       - MYSQL_PASSWORD=${MYSQL_PASSWORD:-chat_password}
       - MYSQL_DATABASE=${MYSQL_DATABASE:-chat_with_pdf}
       - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-rootpassword}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
     depends_on:
       mysql:
         condition: service_healthy

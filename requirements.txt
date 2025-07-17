@@ -10,6 +10,9 @@ python-multipart>=0.0.6,<0.0.7
 # LLM Dependencies
 openai>=1.0.0,<2.0.0
 langchain>=0.1.0,<0.2.0
+langchain-openai>=0.0.5
+langchain-community>=0.0.10
+langgraph>=0.0.15
 
 # Database
 sqlalchemy>=2.0.0,<3.0.0

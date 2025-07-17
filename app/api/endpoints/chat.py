@@ -1,14 +1,17 @@
+"""Chat endpoint implementation using LangChain."""
 import logging
 import os
+from typing import List, Dict, Any
+
 from fastapi import APIRouter, HTTPException
-from app.services.llm_router import LLMRouter
-from app.config.llm import LLMConfig
+
+from app.services.langchain_router import LangChainRouter
+from app.config.llm import LLMConfig, IntentType
 from app.api.models.chat import ChatRequest, ChatResponse
 from app.core.vector_store import VectorStore
 
 # Configure logger
 logger = logging.getLogger(__name__)
-
 router = APIRouter()
 
 # Get OpenAI API key from environment variables
@@ -16,20 +19,104 @@ openai_api_key = os.getenv("OPENAI_API_KEY")
 if not openai_api_key:
     raise ValueError("OPENAI_API_KEY environment variable is not set")
 
+# Initialize LLM config and router
 llm_config = LLMConfig(openai_api_key=openai_api_key)
-llm_router = LLMRouter(llm_config)
-
-# Initialize vector store
+llm_router = LangChainRouter(llm_config)
 vector_store = VectorStore()
 
+def _format_search_results(search_results: List[Dict[str, Any]]) -> str:
+    """Format search results into a user-friendly string."""
+    if not search_results:
+        return "I couldn't find any relevant information in the documents."
+    
+    formatted = []
+    for i, result in enumerate(search_results[:3], 1):
+        # Get the text content from the result
+        content = result.get('text', '').strip()
+        if not content:
+            continue  # Skip results with no content
+            
+        # Get metadata and source information
+        metadata = result.get('metadata', {})
+        source = metadata.get('source', 'Unknown Document')
+        
+        # Format the source name
+        if '/' in source:
+            source = source.split('/')[-1]  # Get just the filename
+        if '.' in source:
+            source = source.split('.')[0]  # Remove file extension
+        # Clean up the source name
+        source = source.replace('_', ' ').replace('-', ' ').title()
+        
+        # Format the result as "document_name reports that ..."
+        # Ensure the content starts with a capital letter and ends with a period
+        content = content[0].upper() + content[1:]
+        if not content.endswith(('.', '!', '?')):
+            content += '.'
+            
+        formatted_entry = f"{source} reports that {content}"
+        
+        # Add page number if available
+        if 'page' in metadata:
+            formatted_entry += f" (Page {metadata['page']})"
+            
+        formatted.append(formatted_entry)
+    
+    # If we filtered out all results due to empty content
+    if not formatted:
+        return "I found some results, but they don't contain any text content."
+        
+    # Join with double newlines for better readability
+    return "\n\n".join(formatted)
+
+async def _process_chat_request(chat_request: ChatRequest) -> ChatResponse:
+    """Process a chat request and return the appropriate response."""
+    # If web search is forced, perform it immediately
+    if chat_request.force_web_search:
+        return await llm_router.route_query(
+            user_message=chat_request.message,
+            force_web_search=True
+        )
+    
+    # First, try to answer from PDFs
+    search_results = vector_store.search_similar(
+        chat_request.message,
+        min_similarity=0.5
+    )
+    
+    if search_results:
+        # Found relevant information in PDFs
+        return ChatResponse(
+            intent=IntentType.PDF_QUERY,
+            message=_format_search_results(search_results),
+            needs_clarification=False
+        )
+    
+    # No relevant information found in PDFs
+    response = await llm_router.route_query(
+        user_message=chat_request.message,
+        force_web_search=False
+    )
+    
+    # If the intent wasn't a greeting, inform user about searching the web
+    if response.intent != IntentType.GREETING:
+        response.message = "The system should recognize this is not covered in the PDFs and search the web."
+    
+    return response
+
 @router.post("/chat", response_model=ChatResponse)
-async def chat(chat_request: ChatRequest):
+async def chat(chat_request: ChatRequest) -> ChatResponse:
     """
     Handle chat messages and route them appropriately.
     
-    - **message**: The user's message
-    - **session_id**: Optional session ID for maintaining conversation context
-    - **force_web_search**: If True, forces a web search regardless of message content
+    Args:
+        chat_request: The chat request containing the message and options
+        
+    Returns:
+        ChatResponse: The response to the user's message
+        
+    Raises:
+        HTTPException: If there's an error processing the request
     """
     if not llm_config.is_configured:
         raise HTTPException(
@@ -38,62 +125,10 @@ async def chat(chat_request: ChatRequest):
         )
     
     try:
-        # Route the query using the LLM router
-        response = await llm_router.route_query(
-            user_message=chat_request.message,
-            force_web_search=chat_request.force_web_search
-        )
-        
-        # If this is a PDF query, search the vector store
-        if response.intent == "pdf_query":
-            search_results = vector_store.search_similar(chat_request.message, min_similarity=0.5)
-            if not search_results:
-                # No relevant documents found, perform web search
-                web_search_response = await llm_router.route_query(
-                    user_message=chat_request.message,
-                    force_web_search=True
-                )
-                if web_search_response.intent == "web_search":
-                    return ChatResponse(
-                        intent=web_search_response.intent,
-                        message=web_search_response.message,
-                        needs_clarification=web_search_response.needs_clarification,
-                        clarification_questions=web_search_response.clarification_questions,
-                        context=web_search_response.context if hasattr(web_search_response, 'context') else None
-                    )
-                
-                # If web search also fails, return a helpful message
-                response.message = "I couldn't find any relevant information in the documents or through a web search. Could you please rephrase your question or provide more details?"
-                response.needs_clarification = True
-                response.clarification_questions = [
-                    "Would you like to try a different search query?",
-                    "Could you provide more specific details about what you're looking for?"
-                ]
-            else:
-                # Format the search results into a response with document names
-                formatted_results = []
-                for result in search_results[:3]:  # Use top 3 results
-                    doc_name = result.get('metadata', {}).get('source', 'The document')
-                    # Clean up the document name if it's a file path
-                    if '/' in doc_name:
-                        doc_name = doc_name.split('/')[-1]  # Get just the filename
-                    if '.' in doc_name:
-                        doc_name = doc_name.split('.')[0]  # Remove file extension
-                    doc_name = doc_name.replace('_', ' ').title()  # Format nicely
-                    formatted_results.append(f"{doc_name} reports that: {result['text']}")
-                
-                response.message = "\n\n".join(formatted_results)
-        
-        return ChatResponse(
-            intent=response.intent,
-            message=response.message,
-            needs_clarification=response.needs_clarification,
-            clarification_questions=response.clarification_questions,
-            context=response.context if hasattr(response, 'context') else None
-        )
+        return await _process_chat_request(chat_request)
     except Exception as e:
-        logger.error(f"Error processing chat request: {str(e)}")
+        logger.error("Error processing chat request: %s", str(e))
         raise HTTPException(
             status_code=500,
             detail=f"An error occurred while processing your request: {str(e)}"
-        )
+        ) from e

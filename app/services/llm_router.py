@@ -28,15 +28,31 @@ Classify the user's message into one of these intents:
 
 2. pdf_query: When the user is asking about the content of PDF documents,
              which are academic research papers about computer science
-             and artificial intelligence.
-   Examples: "What does the document say about X in computer science?",
-             "Summarize the paper about AI", "What is the main contribution of the paper?"
+             and artificial intelligence. This includes:
+             - References to papers using author names (e.g., "Zhang et al.")
+             - References to documents by full or partial names
+             - Any mention of PDFs, papers, or research documents
+             - Requests for summaries or information from specific papers
+   Examples: 
+             - "What does Zhang et al. say about X?"
+             - "Summary of Zhang et al. report"
+             - "Zhang et al. - 2024 - Benchmarking the Text-to-SQL Capability of Large"
+             - "Tell me about the paper on Text-to-SQL by Zhang"
+             - "What's in the PDF about Text-to-SQL?"
+             - "Summarize the document about AI safety"
 
 3. web_search: When the user is asking for general information not specific to PDFs
    Examples: "What's the weather like?", "Tell me about machine learning"
 
 4. clarification_needed: When the intent is not clear or more information is needed
    Examples: "I need help", "Can you find something for me?"
+
+Important notes:
+- If the message contains a document name, paper title, or author names (especially with academic citation formats like "et al."), it's VERY LIKELY a pdf_query.
+- If the message asks for a summary or information that could be in a research paper, prefer pdf_query over web_search.
+- When in doubt between pdf_query and web_search, choose pdf_query if the query could reasonably be about academic research.
+- If the message contains a document name that looks like a research paper (e.g., "Zhang et al. - 2024 - Title..."), it's DEFINITELY a pdf_query.
+- If the message is asking about the content of a specific paper or document, it's a pdf_query.
 
 For very short messages, prioritize greeting classification if it could be a greeting.
 If the message is just a greeting word or phrase, it's almost certainly a greeting intent.
@@ -175,7 +191,7 @@ class LLMRouter:
                 return RouterResponse(
                     intent=intent_type,
                     message=(
-                        "I'll look that up for you. What specific information are you looking for?"
+                        "The system should recognize this is not covered in the PDFs and search the web"
                         if prediction.intent == IntentLabel.WEB_SEARCH
                         else "I'm not sure I understand. Could you please provide more details?"
                     ),

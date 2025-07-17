@@ -96,9 +96,54 @@ class VectorStore:
         
         return total_stored
     
-    def search_similar(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
-        """Search for similar documents to the query."""
+    def _normalize_document_name(self, name: str) -> str:
+        """Normalize document name for more flexible matching."""
+        import re
+        # Remove common punctuation and extra spaces
+        name = re.sub(r'[^\w\s-]', ' ', name.lower())
+        # Remove year patterns like (2024) or [2024]
+        name = re.sub(r'\s*[\[\(]\d{4}[\]\)]', '', name)
+        # Replace multiple spaces with single space
+        name = re.sub(r'\s+', ' ', name).strip()
+        return name
+
+    def search_similar(self, query: str, limit: int = 5, min_similarity: float = 0.5, filter_doc_names: List[str] = None) -> List[Dict[str, Any]]:
+        """
+        Search for similar documents to the query.
+        
+        Args:
+            query: The search query
+            limit: Maximum number of results to return
+            min_similarity: Minimum similarity score (0-1) for results to be considered relevant
+            filter_doc_names: Optional list of document names to filter results by
+            
+        Returns:
+            List of relevant documents with their scores and metadata
+        """
         try:
+            # Extract document names from query if not provided
+            if filter_doc_names is None:
+                filter_doc_names = []
+                
+                # Look for patterns like "in Zhang et al.(2024)" or "from DocumentName"
+                import re
+                doc_patterns = [
+                    r'in\s+([A-Za-z0-9\s\.\-]+\s*[\(\[]?\d{4}[\)\]]?)',  # e.g., "in Zhang et al.(2024)"
+                    r'from\s+([A-Za-z0-9\s\.\-]+)(?:\s+paper|document)?',  # e.g., "from DocumentName"
+                    r'paper\s+["\']([^"\']+)["\']',  # e.g., "paper 'Document Name'"
+                    r'([A-Z][A-Za-z]+\s+et\s+al\.?[\s\-]*(?:\(?\d{4}\))?)',  # e.g., "Zhang et al. (2024)"
+                ]
+                
+                for pattern in doc_patterns:
+                    matches = re.findall(pattern, query, re.IGNORECASE)
+                    if matches:
+                        # Clean up and normalize the matched document names
+                        for match in matches:
+                            # Remove any trailing punctuation or spaces
+                            clean_name = re.sub(r'[^\w\s-]', ' ', match).strip()
+                            if clean_name and clean_name not in filter_doc_names:
+                                filter_doc_names.append(clean_name)
+            
             # Generate embedding for the query
             query_embedding = self.embedding_model.encode(
                 query,
@@ -107,18 +152,62 @@ class VectorStore:
                 normalize_embeddings=True
             ).tolist()
             
-            # Search in Qdrant
+            # Prepare filter if document names are specified
+            filter_condition = None
+            if filter_doc_names:
+                # Normalize filter patterns for more flexible matching
+                normalized_filters = [self._normalize_document_name(name) for name in filter_doc_names]
+                # Create a list of patterns to match any part of the document name
+                patterns = []
+                for name in normalized_filters:
+                    # Split into words and create a pattern that matches any word
+                    words = name.split()
+                    if len(words) > 2:  # For longer names, use the most significant parts
+                        # Include first word + last word, or first two words if only two words
+                        patterns.append(f"({words[0]}.*{words[-1]}|{' '.join(words[:2])})")
+                    else:
+                        patterns.append('.*'.join(words))
+                
+                # Combine patterns with OR
+                pattern = '|'.join(patterns)
+                filter_condition = {
+                    'must': [
+                        {
+                            'key': 'source',
+                            'match': {
+                                'text': pattern,
+                                'type': 'regexp'
+                            }
+                        }
+                    ]
+                }
+            
+            # Search in Qdrant with optional filter
             search_results = self.client.search(
                 collection_name=self.collection_name,
                 query_vector=query_embedding,
+                query_filter=filter_condition,
                 limit=limit,
                 with_vectors=False,
-                with_payload=True
+                with_payload=True,
+                score_threshold=min_similarity
             )
             
             # Format results
-            return [
-                {
+            results = []
+            for hit in search_results:
+                source = hit.payload.get('source', '').lower()
+                # Skip if we have document filters and this result doesn't match any of them
+                if filter_doc_names:
+                    source_normalized = self._normalize_document_name(source)
+                    filter_matched = any(
+                        all(term in source_normalized for term in self._normalize_document_name(name).split())
+                        for name in filter_doc_names
+                    )
+                    if not filter_matched:
+                        continue
+                
+                results.append({
                     'id': str(hit.id),
                     'score': hit.score,
                     'text': hit.payload.get('text', ''),
@@ -126,13 +215,12 @@ class VectorStore:
                         k: v for k, v in hit.payload.items()
                         if k != 'text'
                     }
-                }
-                for hit in search_results
-            ]
+                })
+            return results
             
         except Exception as e:
             logger.error(f"Error searching documents: {str(e)}")
-            raise
+            return []  # Return empty list on error
     
     def clear_collection(self) -> bool:
         """Clear all vectors from the collection."""

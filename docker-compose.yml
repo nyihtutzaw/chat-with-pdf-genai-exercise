@@ -1,6 +1,27 @@
 version: '3.8'
 
 services:
+  # Vector Database (Qdrant)
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: unless-stopped
+    environment:
+      - QDRANT_ALLOW_RECOVERY_MODE=true
+    # Remove healthcheck for now to allow Qdrant to start
+    # healthcheck:
+    #   test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+    #   interval: 10s
+    #   timeout: 5s
+    #   retries: 3
+    #   start_period: 30s
+
+  # Web API
   web:
     build: 
       context: .
@@ -9,6 +30,7 @@ services:
     volumes:
       - ./app:/app/app
       - ./data:/app/data
+      - ./logs:/app/logs
     ports:
       - "${PORT:-8000}:8000"
     environment:
@@ -16,32 +38,38 @@ services:
       - PYTHONPATH=/app
       - BACKEND_CORS_ORIGINS=${BACKEND_CORS_ORIGINS:-http://localhost:3000,http://localhost:8000}
       - DEBUG=${DEBUG:-true}
+      - QDRANT_URL=http://qdrant:6333
+      - LOG_LEVEL=INFO
+    depends_on:
+      - qdrant
     restart: unless-stopped
-    # Enable auto-reload in development
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
-  # Vector Database (Qdrant) - Uncomment when ready
-  # vector-db:
-  #   image: qdrant/qdrant:latest
-  #   ports:
-  #     - "6333:6333"
-  #     - "6334:6334"
-  #   volumes:
-  #     - qdrant_data:/qdrant/storage
-  #   restart: unless-stopped
-  #   environment:
-  #     - QDRANT_ALLOW_RECOVERY_MODE=true
+  # PDF Ingestion Service
+  pdf_ingestion:
+    build:
+      context: .
+      dockerfile: Dockerfile.ingest
+    container_name: pdf_ingestion
+    volumes:
+      - ./data/pdfs:/app/data/pdfs
+      - ./logs:/app/logs
+    environment:
+      - QDRANT_URL=http://qdrant:6333
+      - QDRANT_COLLECTION=documents
+      - CHUNK_SIZE=1000
+      - CHUNK_OVERLAP=200
+      - EMBEDDING_MODEL=all-MiniLM-L6-v2
+      - LOG_LEVEL=INFO
+    command: python -m scripts.ingest_pdfs --input-dir /app/data/pdfs --collection documents --chunk-size 1000 --chunk-overlap 200
+    depends_on:
+      - qdrant
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://qdrant:6333/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
-  # Cache (Redis) - Uncomment when ready
-  # cache:
-  #   image: redis:7-alpine
-  #   ports:
-  #     - "6379:6379"
-  #   volumes:
-  #     - redis_data:/data
-  #   restart: unless-stopped
-  #   command: redis-server --save 60 1 --loglevel warning
-
-# volumes:
-#   qdrant_data:
-#   redis_data:
+volumes:
+  qdrant_data:

@@ -1,6 +1,8 @@
+from pathlib import Path
+from typing import List, Union
+
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import List, Union
 
 class Settings(BaseSettings):
     # API Configuration
@@ -19,6 +21,24 @@ class Settings(BaseSettings):
     # Application Settings
     DEBUG: bool = True
     
+    # PDF Processing
+    CHUNK_SIZE: int = 1000
+    CHUNK_OVERLAP: int = 200
+    EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
+    
+    # Qdrant Vector Database
+    QDRANT_URL: str = "http://localhost:6333"
+    QDRANT_COLLECTION: str = "documents"
+    
+    # File Paths
+    BASE_DIR: Path = Path(__file__).parent.parent.parent
+    DATA_DIR: Path = BASE_DIR / "data"
+    PDF_DIR: Path = DATA_DIR / "pdfs"
+    LOG_DIR: Path = BASE_DIR / "logs"
+    
+    # Logging
+    LOG_LEVEL: str = "INFO"
+    LOG_FILE: str = str(LOG_DIR / "ingestion.log")
     
     model_config = SettingsConfigDict(
         case_sensitive=True,
@@ -26,6 +46,19 @@ class Settings(BaseSettings):
         env_file_encoding='utf-8',
         extra='ignore'
     )
+    
+    @field_validator('BACKEND_CORS_ORIGINS')
+    def assemble_cors_origins(cls, v: Union[str, List[str]]) -> Union[List[str], str]:
+        if isinstance(v, str) and not v.startswith("["):
+            return [i.strip() for i in v.split(",")]
+        elif isinstance(v, (list, str)):
+            return v
+        raise ValueError(v)
 
 # Create settings instance
 settings = Settings()
+
+# Create necessary directories
+settings.DATA_DIR.mkdir(exist_ok=True)
+settings.PDF_DIR.mkdir(exist_ok=True)
+settings.LOG_DIR.mkdir(exist_ok=True)

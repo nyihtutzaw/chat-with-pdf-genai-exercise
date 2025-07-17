@@ -1,0 +1,21 @@
+[tool.poetry]
+name = "chat-with-pdf"
+version = "0.1.0"
+description = "Chat with PDF - A system for intelligent question-answering over academic papers"
+authors = ["Your Name <your.email@example.com>"]
+readme = "README.md"
+packages = [{include = "app"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+pypdf = "^3.17.1"
+sentence-transformers = "^2.5.1"
+qdrant-client = "^1.7.0"
+tqdm = "^4.66.1"
+fastapi = "^0.110.0"
+uvicorn = {extras = ["standard"], version = "^0.27.0"}
+python-dotenv = "^1.0.0"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"

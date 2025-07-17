@@ -168,19 +168,28 @@ class VectorStore:
                     else:
                         patterns.append('.*'.join(words))
                 
-                # Combine patterns with OR
-                pattern = '|'.join(patterns)
-                filter_condition = {
-                    'must': [
-                        {
-                            'key': 'source',
-                            'match': {
-                                'text': pattern,
-                                'type': 'regexp'
-                            }
-                        }
-                    ]
-                }
+                from qdrant_client.http import models as rest
+                
+                # Create a list of match conditions for each pattern
+                match_conditions = []
+                for pattern in patterns:
+                    match_conditions.append(
+                        rest.FieldCondition(
+                            key="source",
+                            match=rest.MatchText(text=pattern)
+                        )
+                    )
+                
+                # If we have multiple conditions, combine them with OR
+                if len(match_conditions) > 1:
+                    filter_condition = rest.Filter(
+                        should=match_conditions,
+                        min_should_match=1
+                    )
+                else:
+                    filter_condition = rest.Filter(
+                        must=match_conditions
+                    )
             
             # Search in Qdrant with optional filter
             search_results = self.client.search(

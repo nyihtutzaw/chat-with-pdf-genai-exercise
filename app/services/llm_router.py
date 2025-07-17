@@ -2,6 +2,7 @@ import json
 import logging
 
 from openai import AsyncOpenAI
+from app.services.web_search import web_search_service
 
 from app.config.llm import LLMConfig, RouterResponse
 from app.models.intent import IntentLabel, IntentPrediction
@@ -10,6 +11,7 @@ from app.models.intent import IntentLabel, IntentPrediction
 WEB_SEARCH_PROMPT = "What specific information are you looking for?"
 RECENT_INFO_PROMPT = "Are you looking for recent information or something specific?"
 PDF_QUERY_CLARIFICATION = "Are you looking for information from the PDF documents?"
+REPHRASE_QUESTION = "Could you rephrase your question?"
 
 # Ambiguity patterns and clarification templates
 AMBIGUITY_PATTERNS = [
@@ -172,6 +174,53 @@ class LLMRouter:
                 
         return False, "", ""
     
+    async def _perform_web_search(self, query: str) -> RouterResponse:
+        """
+        Perform a web search and format the results.
+        
+        Args:
+            query: The search query
+            
+        Returns:
+            RouterResponse: Formatted search results or error message
+        """
+        try:
+            search_results = await web_search_service.search(query)
+            if search_results:
+                # Format the results into a readable response
+                response_text = "🔍 Here are some relevant web results:\n\n"
+                for i, result in enumerate(search_results[:3], 1):  # Show top 3 results
+                    response_text += (
+                        f"{i}. **{result['title']}**\n"
+                        f"   {result['snippet']}\n"
+                        f"   📎 {result['link']}\n\n"
+                    )
+                
+                return RouterResponse(
+                    intent=IntentType.WEB_SEARCH,
+                    message=response_text.strip(),
+                    needs_clarification=False,
+                    context={"search_results": search_results}
+                )
+            else:
+                return RouterResponse(
+                    intent=IntentType.CLARIFICATION_NEEDED,
+                    message="I couldn't find any relevant web results. Could you try rephrasing your query?",
+                    needs_clarification=True,
+                    clarification_questions=[
+                        "Would you like to try a different search term?",
+                        "Could you provide more specific details about what you're looking for?"
+                    ]
+                )
+                
+        except Exception as e:
+            logger.error(f"Error in web search: {str(e)}")
+            return RouterResponse(
+                intent=IntentType.CLARIFICATION_NEEDED,
+                message="I encountered an error while performing the web search. Please try again later.",
+                needs_clarification=True
+            )
+    
     async def route_query(self, user_message: str, force_web_search: bool = False) -> RouterResponse:
         """
         Route the user query to the appropriate handler based on intent.
@@ -187,6 +236,10 @@ class LLMRouter:
         logger.info("Processing message: '%s'", user_message)
         logger.info("Force web search: %s", force_web_search)
         
+        # If web search is forced, perform it immediately
+        if force_web_search:
+            return await self._perform_web_search(user_message)
+        
         # First check for ambiguous questions
         is_ambiguous, clarification, example = self._detect_ambiguity(user_message)
         if is_ambiguous:
@@ -200,16 +253,6 @@ class LLMRouter:
                 message="I want to make sure I understand your question correctly.",
                 needs_clarification=True,
                 clarification_questions=[q for q in clarification_questions if q]
-            )
-        
-        # If web search is forced, return web search intent immediately
-        if force_web_search:
-            logger.info("Force web search is enabled")
-            return RouterResponse(
-                intent=IntentType.WEB_SEARCH,
-                message="Performing a web search as requested. What would you like to know?",
-                needs_clarification=not user_message,
-                clarification_questions=[WEB_SEARCH_PROMPT, RECENT_INFO_PROMPT] if not user_message else []
             )
         
         try:
@@ -243,19 +286,17 @@ class LLMRouter:
                     message="I'll search through the PDF documents for that information.",
                     needs_clarification=False
                 )
-            else:  # WEB_SEARCH or CLARIFICATION_NEEDED
+            elif prediction.intent == IntentLabel.WEB_SEARCH:
+                return await self._perform_web_search(user_message)
+            else:  # CLARIFICATION_NEEDED
                 return RouterResponse(
                     intent=intent_type,
-                    message=(
-                        "The system should recognize this is not covered in the PDFs and search the web"
-                        if prediction.intent == IntentLabel.WEB_SEARCH
-                        else "I'm not sure I understand. Could you please provide more details?"
-                    ),
+                    message="I'm not sure I understand. Could you please provide more details?",
                     needs_clarification=True,
                     clarification_questions=[
-                        WEB_SEARCH_PROMPT,
-                        RECENT_INFO_PROMPT,
-                        "Are you looking for information from the PDF documents?"
+                        REPHRASE_QUESTION,
+                        PDF_QUERY_CLARIFICATION,
+                        "Would you like me to search the web for this information?"
                     ]
                 )
             
@@ -270,9 +311,9 @@ class LLMRouter:
                     error_type, error_msg,
                     exc_info=True
                 )
-                message = "I had trouble understanding that. Could you rephrase?"
+                message = f"I had trouble understanding that. {REPHRASE_QUESTION}"
                 questions = [
-                    "Could you rephrase your question?",
+                    REPHRASE_QUESTION,
                     PDF_QUERY_CLARIFICATION,
                     WEB_SEARCH_PROMPT
                 ]
@@ -281,7 +322,6 @@ class LLMRouter:
                 message = f"I'm having some technical difficulties: {error_msg}. Please try again or rephrase."
                 questions = [
                     "Could you rephrase your question?",
-                    "Would you like to try a different approach?",
                     PDF_QUERY_CLARIFICATION
                 ]
             

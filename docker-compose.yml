@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  web:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: chat_with_pdf_api
+    volumes:
+      - ./app:/app/app
+      - ./data:/app/data
+    ports:
+      - "${PORT:-8000}:8000"
+    environment:
+      - ENVIRONMENT=development
+      - PYTHONPATH=/app
+      - BACKEND_CORS_ORIGINS=${BACKEND_CORS_ORIGINS:-http://localhost:3000,http://localhost:8000}
+      - DEBUG=${DEBUG:-true}
+    restart: unless-stopped
+    # Enable auto-reload in development
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Vector Database (Qdrant) - Uncomment when ready
+  # vector-db:
+  #   image: qdrant/qdrant:latest
+  #   ports:
+  #     - "6333:6333"
+  #     - "6334:6334"
+  #   volumes:
+  #     - qdrant_data:/qdrant/storage
+  #   restart: unless-stopped
+  #   environment:
+  #     - QDRANT_ALLOW_RECOVERY_MODE=true
+
+  # Cache (Redis) - Uncomment when ready
+  # cache:
+  #   image: redis:7-alpine
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - redis_data:/data
+  #   restart: unless-stopped
+  #   command: redis-server --save 60 1 --loglevel warning
+
+# volumes:
+#   qdrant_data:
+#   redis_data:

@@ -11,6 +11,28 @@ WEB_SEARCH_PROMPT = "What specific information are you looking for?"
 RECENT_INFO_PROMPT = "Are you looking for recent information or something specific?"
 PDF_QUERY_CLARIFICATION = "Are you looking for information from the PDF documents?"
 
+# Ambiguity patterns and clarification templates
+AMBIGUITY_PATTERNS = [
+    # Vague quantity questions
+    {
+        'pattern': r'\b(how many|how much|what (?:is|are) (?:the )?(?:number|amount|quantity) of)\b.*\b(enough|sufficient|good|optimal|best|required)\b',
+        'clarification': "I'm not sure I understand your question. Could you specify how many/much of something you're asking about and what you're trying to achieve?",
+        'example': "For example, instead of 'How many examples are enough?', try 'How many training examples do I need to achieve 95% accuracy on the test set for sentiment analysis?'"
+    },
+    # Vague quality questions
+    {
+        'pattern': r'\b(is|are|does|do|will|would|can|could|should|might|may)\b.*\b(good|bad|better|best|worst|enough|sufficient|optimal|work|help|improve|affect|impact|matter)\b',
+        'clarification': "I'm not sure I understand your question. Could you explain what you mean by 'good/bad' or 'better/worse' in this context?",
+        'example': "For example, instead of 'Is this model good?', try 'How does this model's 90% accuracy compare to state-of-the-art on the IMDB dataset?'"
+    },
+    # Vague comparison questions
+    {
+        'pattern': r'\b(which|what) (is|are) (better|best|worse|worst|faster|slower|more accurate|less accurate)\b',
+        'clarification': "To help you compare effectively, could you explain what you mean by 'better/worse' in this context and what you're trying to achieve?",
+        'example': "For example, instead of 'Which model is better?', try 'Which model has higher F1 score on small text classification tasks with limited training data?'"
+    }
+]
+
 # Configure logger
 logger = logging.getLogger(__name__)
 
@@ -131,6 +153,25 @@ class LLMRouter:
             )
     
     
+    def _detect_ambiguity(self, message: str) -> tuple[bool, str, str]:
+        """
+        Check if a message is ambiguous and return appropriate clarification.
+        
+        Args:
+            message: The user's message to check for ambiguity
+            
+        Returns:
+            tuple: (is_ambiguous, clarification_message, example)
+        """
+        import re
+        
+        # Check for ambiguity patterns
+        for pattern_info in AMBIGUITY_PATTERNS:
+            if re.search(pattern_info['pattern'], message, re.IGNORECASE):
+                return True, pattern_info['clarification'], pattern_info.get('example', '')
+                
+        return False, "", ""
+    
     async def route_query(self, user_message: str, force_web_search: bool = False) -> RouterResponse:
         """
         Route the user query to the appropriate handler based on intent.
@@ -145,6 +186,21 @@ class LLMRouter:
         logger.info("\n%s", "=" * 80)
         logger.info("Processing message: '%s'", user_message)
         logger.info("Force web search: %s", force_web_search)
+        
+        # First check for ambiguous questions
+        is_ambiguous, clarification, example = self._detect_ambiguity(user_message)
+        if is_ambiguous:
+            clarification_questions = [
+                clarification,
+                "Could you provide more specific details or constraints?",
+                example if example else ""
+            ]
+            return RouterResponse(
+                intent=IntentType.CLARIFICATION_NEEDED,
+                message="I want to make sure I understand your question correctly.",
+                needs_clarification=True,
+                clarification_questions=[q for q in clarification_questions if q]
+            )
         
         # If web search is forced, return web search intent immediately
         if force_web_search:

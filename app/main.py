@@ -4,12 +4,16 @@ from pydantic import BaseModel
 from typing import List, Optional
 
 # Import configurations
-from app.config import settings, setup_cors as cors
+from app.config import settings, init_db
+from app.api.endpoints import ingestion as ingestion_endpoints
+
+# Initialize database
+init_db()
 
 # Initialize FastAPI app
 app = FastAPI(
     title=settings.PROJECT_NAME,
-    description="API for intelligent question-answering over academic papers",
+    description="API for intelligent question-answering over academic papers with PDF ingestion tracking",
     version=settings.VERSION,
     debug=settings.DEBUG,
     docs_url=f"{settings.API_V1_STR}/docs",
@@ -24,6 +28,13 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+
+# Include API routers
+app.include_router(
+    ingestion_endpoints.router,
+    prefix=f"{settings.API_V1_STR}",
+    tags=["ingestions"],
 )
 
 # Models

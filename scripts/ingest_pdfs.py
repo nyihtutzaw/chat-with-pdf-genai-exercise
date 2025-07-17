@@ -3,13 +3,13 @@
 PDF Ingestion Script
 
 This script processes PDF files from the data/pdfs directory and stores their content
-in a Qdrant vector database for semantic search.
+in a Qdrant vector database for semantic search, while tracking the ingestion status.
 """
 
 import argparse
 import logging
-import os
 import sys
+import time
 from pathlib import Path
 
 from tqdm import tqdm
@@ -20,39 +20,44 @@ sys.path.append(str(Path(__file__).parent.parent))
 from scripts.pdf_processor import PDFProcessor
 from app.core.vector_store import VectorStore
 from app.config.config import settings
+from app.utils.ingestion_tracker import IngestionTracker
 
 # Configure logging
 def setup_logging():
     """Configure logging to both console and file."""
-    settings.LOG_DIR.mkdir(exist_ok=True)
+    # Create root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(settings.LOG_LEVEL)
     
-    logger = logging.getLogger()
-    logger.setLevel(settings.LOG_LEVEL)
+    # Create formatter
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     
     # Console handler
     console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
+    console_handler.setLevel(logging.INFO)  # Always show INFO and above in console
+    console_handler.setFormatter(formatter)
     
     # File handler
+    settings.LOG_DIR.mkdir(parents=True, exist_ok=True)
     file_handler = logging.FileHandler(settings.LOG_FILE)
     file_handler.setLevel(settings.LOG_LEVEL)
-    
-    # Formatter
-    formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
-    console_handler.setFormatter(formatter)
     file_handler.setFormatter(formatter)
     
+    # Clear any existing handlers
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+    
     # Add handlers
-    logger.addHandler(console_handler)
-    logger.addHandler(file_handler)
+    root_logger.addHandler(console_handler)
+    root_logger.addHandler(file_handler)
+    
+    return logging.getLogger(__name__)
 
-logger = logging.getLogger(__name__)
+# Initialize logger
+logger = setup_logging()
 
 def process_pdfs(
     input_dir: Path,
-    collection_name: str,
     chunk_size: int,
     chunk_overlap: int,
     batch_size: int
@@ -65,7 +70,6 @@ def process_pdfs(
         chunk_size: Size of text chunks
         chunk_overlap: Overlap between chunks
         batch_size: Number of chunks to process in a batch
-        clear_existing: Whether to clear existing vectors before ingestion
         
     Returns:
         Number of document chunks processed and stored
@@ -74,137 +78,140 @@ def process_pdfs(
         FileNotFoundError: If input directory doesn't exist
         Exception: For any processing or storage errors
     """
-    if not input_dir.exists():
+    logger = logging.getLogger(__name__)
+    
+    # Validate input directory
+    if not input_dir.exists() or not input_dir.is_dir():
         raise FileNotFoundError(f"Input directory not found: {input_dir}")
     
-    logger.info(f"Starting PDF ingestion from {input_dir}")
-    logger.info(f"Using collection: {collection_name}")
-    logger.info(f"Chunk size: {chunk_size}, Overlap: {chunk_overlap}, Batch size: {batch_size}")
+    # Get all PDF files
+    pdf_files = list(input_dir.glob("*.pdf"))
     
-    # Set the collection name in settings
-    from app.config.config import settings
-    settings.QDRANT_COLLECTION = collection_name
+    if not pdf_files:
+        logger.warning(f"No PDF files found in {input_dir}")
+        return 0
     
-    # Initialize components
-    pdf_processor = PDFProcessor(
-        chunk_size=chunk_size,
-        chunk_overlap=chunk_overlap
-    )
-    
+    # Initialize vector store
     vector_store = VectorStore()
     
-    # Always clear the collection before ingestion to prevent duplicates
-    logger.warning("Clearing existing vectors in collection before ingestion")
-    vector_store.clear_collection()
+    # Initialize PDF processor
+    pdf_processor = PDFProcessor(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+    
+    # Process each PDF file with status tracking
+    total_stored = 0
     
     try:
-        # Process PDFs and store in vector database
-        chunks = []
-        total_stored = 0
-        
-        for chunk in tqdm(
-            pdf_processor.process_directory(input_dir),
-            desc="Processing PDFs",
-            unit="chunk"
-        ):
-            # Convert chunk to document format
-            document = {
-                'text': chunk['text'],
-                'metadata': {
-                    'source': chunk['source'],
-                    'page': chunk['page'],
-                    'chunk': chunk['chunk_num'],
-                    'total_chunks': chunk['total_chunks']
-                }
-            }
-            chunks.append(document)
+        for pdf_file in tqdm(pdf_files, desc="Processing PDFs"):
+            file_path = str(pdf_file.absolute())
+            logger.info(f"Processing {pdf_file.name}")
             
-            # Process in batches
-            if len(chunks) >= batch_size:
-                vector_store.store_documents(chunks)
-                total_stored += len(chunks)
-                chunks = []
-                logger.debug(f"Processed {total_stored} chunks so far")
-        
-        # Process any remaining chunks
-        if chunks:
-            vector_store.store_documents(chunks)
-            total_stored += len(chunks)
+            # Track ingestion status for this file
+            tracker = IngestionTracker(file_path)
+            try:
+                # Start ingestion tracking
+                tracker.start_ingestion()
+                
+                # Extract text and chunks from PDF
+                chunks = pdf_processor.process_pdf(pdf_file)
+                tracker.mark_in_progress(total_documents=len(chunks))
+                
+                # Store chunks in batches
+                for i in range(0, len(chunks), batch_size):
+                    batch = chunks[i:i + batch_size]
+                    vector_store.store_documents(batch)
+                    total_stored += len(batch)
+                    tracker.update_progress(processed_documents=total_stored)
+                    logger.debug(f"Processed {total_stored} chunks so far")
+                
+                # Mark as completed
+                tracker.mark_completed(processed_documents=total_stored)
+                
+            except Exception as e:
+                error_msg = f"Error processing {pdf_file.name}: {str(e)}"
+                logger.error(error_msg, exc_info=True)
+                if 'tracker' in locals():
+                    tracker.mark_failed(error_message=error_msg)
+                raise
+            finally:
+                # Ensure database connection is closed
+                if 'tracker' in locals() and tracker.db:
+                    tracker.db.close()
         
         logger.info(f"Successfully processed {total_stored} chunks from {input_dir}")
         return total_stored
         
     except Exception as e:
-        logger.error(f"Error during PDF ingestion: {str(e)}", exc_info=True)
+        logger.error(f"Fatal error during PDF ingestion: {str(e)}", exc_info=True)
         raise
 
-def main() -> None:
-    """Main entry point for PDF ingestion."""
-    # Parse command line arguments
-    parser = argparse.ArgumentParser(description="Ingest PDFs into Qdrant vector store.")
+def main():
+    """Main entry point for PDF ingestion with status tracking."""
+    # Set up argument parser
+    parser = argparse.ArgumentParser(description="Ingest PDFs into vector database with status tracking")
     parser.add_argument(
         "--input-dir",
         type=str,
-        required=True,
-        help="Directory containing PDF files to process"
+        default=str(settings.PDF_DIR),
+        help=f"Directory containing PDFs (default: {settings.PDF_DIR})"
     )
     parser.add_argument(
         "--collection",
         type=str,
-        default=os.getenv("QDRANT_COLLECTION", "pdf_documents"),
-        help="Qdrant collection name (default: pdf_documents)"
+        default=settings.QDRANT_COLLECTION,
+        help=f"Qdrant collection name (default: {settings.QDRANT_COLLECTION})"
     )
     parser.add_argument(
         "--chunk-size",
         type=int,
-        default=int(os.getenv("CHUNK_SIZE", "1000")),
-        help="Chunk size for text splitting (default: 1000)"
+        default=settings.CHUNK_SIZE,
+        help=f"Chunk size in characters (default: {settings.CHUNK_SIZE})"
     )
     parser.add_argument(
         "--chunk-overlap",
         type=int,
-        default=int(os.getenv("CHUNK_OVERLAP", "200")),
-        help="Chunk overlap for text splitting (default: 200)"
+        default=settings.CHUNK_OVERLAP,
+        help=f"Chunk overlap in characters (default: {settings.CHUNK_OVERLAP})"
     )
     parser.add_argument(
         "--batch-size",
         type=int,
         default=32,
-        help="Batch size for embedding generation (default: 32)"
-    )
-    parser.add_argument(
-        "--log-level",
-        type=str,
-        default=os.getenv("LOG_LEVEL", "INFO"),
-        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        help="Set the logging level (default: INFO)"
+        help="Number of chunks to process in a batch (default: 32)"
     )
     
+    # Parse arguments
     args = parser.parse_args()
     
-    # Configure logging
-    logging.basicConfig(
-        level=args.log_level,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
+    # Set up logging
+    setup_logging()
+    logger = logging.getLogger(__name__)
     
+    # Process PDFs with status tracking
     try:
+        logger.info(f"Starting PDF ingestion from {args.input_dir}")
+        logger.info(f"Using collection: {args.collection}")
+        logger.info(f"Chunk size: {args.chunk_size}, Overlap: {args.chunk_overlap}, Batch size: {args.batch_size}")
+        
+        start_time = time.time()
+        
         total_processed = process_pdfs(
             input_dir=Path(args.input_dir),
-            collection_name=args.collection,
             chunk_size=args.chunk_size,
             chunk_overlap=args.chunk_overlap,
             batch_size=args.batch_size
         )
         
-        if total_processed > 0:
-            logger.info(f"Successfully processed {total_processed} document chunks")
-        else:
-            logger.warning("No documents were processed")
-            
+        elapsed = time.time() - start_time
+        logger.info(f"Successfully processed {total_processed} chunks in {elapsed:.2f} seconds")
+        return 0
+        
     except Exception as e:
         logger.error(f"PDF ingestion failed: {str(e)}", exc_info=True)
-        sys.exit(1)
+        return 1
+    finally:
+        # Ensure all database connections are closed
+        from app.db.base import engine
+        engine.dispose()
 
 if __name__ == "__main__":
     main()

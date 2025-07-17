@@ -64,13 +64,15 @@ class VectorStore:
         
         for doc, embedding in zip(documents, embeddings):
             point_id = str(uuid.uuid4())
+            # Create a copy of the doc without the text field for metadata
+            metadata = {k: v for k, v in doc.items() if k != 'text'}
             points.append(
                 models.PointStruct(
                     id=point_id,
                     vector=embedding,
                     payload={
                         'text': doc['text'],
-                        **doc['metadata']
+                        **metadata
                     }
                 )
             )

@@ -1,6 +1,36 @@
 version: '3.8'
 
 services:
+  # MySQL Database
+  mysql:
+    image: mysql:8.0
+    container_name: mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-chat_with_pdf}
+      MYSQL_USER: ${MYSQL_USER:-chat_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-chat_password}
+      MYSQL_ALLOW_EMPTY_PASSWORD: 'no'
+      MYSQL_INITDB_SKIP_TZINFO: '1'
+    ports:
+      - "3307:3306"  # Changed from 3306 to 3307 on host to avoid port conflict
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./docker/mysql/init/01-init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    command: [
+      '--default-authentication-plugin=mysql_native_password',
+      '--character-set-server=utf8mb4',
+      '--collation-server=utf8mb4_unicode_ci',
+      '--max_connections=200'
+    ]
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u${MYSQL_USER:-chat_user}", "-p${MYSQL_PASSWORD:-chat_password}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
   # Vector Database (Qdrant)
   qdrant:
     image: qdrant/qdrant:latest
@@ -40,10 +70,27 @@ services:
       - DEBUG=${DEBUG:-true}
       - QDRANT_URL=http://qdrant:6333
       - LOG_LEVEL=INFO
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - MYSQL_USER=${MYSQL_USER:-chat_user}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-chat_password}
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-chat_with_pdf}
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-rootpassword}
     depends_on:
-      - qdrant
+      mysql:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
     restart: unless-stopped
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    command: >
+      bash -c "
+      echo 'Waiting for MySQL to be ready...' &&
+      until nc -z mysql 3306; do
+        sleep 1
+      done &&
+      echo 'MySQL is ready! Starting API...' &&
+      uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+      "
 
   # PDF Ingestion Service
   pdf_ingestion:
@@ -61,15 +108,38 @@ services:
       - CHUNK_OVERLAP=200
       - EMBEDDING_MODEL=all-MiniLM-L6-v2
       - LOG_LEVEL=INFO
-    command: python -m scripts.ingest_pdfs --input-dir /app/data/pdfs --collection documents --chunk-size 1000 --chunk-overlap 200
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - MYSQL_USER=${MYSQL_USER:-chat_user}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-chat_password}
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-chat_with_pdf}
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-rootpassword}
+    command: >
+      bash -c "
+      echo 'Waiting for MySQL to be ready...' &&
+      until nc -z mysql 3306; do
+        sleep 1
+      done &&
+      echo 'MySQL is ready! Waiting for Qdrant...' &&
+      until nc -z qdrant 6333; do
+        sleep 1
+      done &&
+      echo 'Qdrant is ready! Starting ingestion...' &&
+      python -m scripts.ingest_pdfs --input-dir /app/data/pdfs --collection documents --chunk-size 1000 --chunk-overlap 200
+      "
     depends_on:
-      - qdrant
+      mysql:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
     restart: on-failure
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://qdrant:6333/healthz"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
 
 volumes:
   qdrant_data:
+  mysql_data:

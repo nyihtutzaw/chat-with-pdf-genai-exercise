@@ -107,7 +107,7 @@ class VectorStore:
         name = re.sub(r'\s+', ' ', name).strip()
         return name
 
-    def search_similar(self, query: str, limit: int = 5, min_similarity: float = 0.5, filter_doc_names: List[str] = None) -> List[Dict[str, Any]]:
+    def search_similar(self, query: str, limit: int = 5, min_similarity: float = 0.2, filter_doc_names: List[str] = None) -> List[Dict[str, Any]]:
         """
         Search for similar documents to the query.
         
@@ -240,3 +240,15 @@ class VectorStore:
         except Exception as e:
             logger.error(f"Error clearing collection: {str(e)}")
             return False
+
+    def delete_collection(self):
+        """Delete the entire collection."""
+        try:
+            self.client.delete_collection(collection_name=self.collection_name)
+            logger.info(f"Collection '{self.collection_name}' deleted successfully")
+        except Exception as e:
+            logger.error(f"Error deleting collection '{self.collection_name}': {str(e)}")
+            raise
+
+# Create a global instance of the VectorStore
+vector_store = VectorStore()

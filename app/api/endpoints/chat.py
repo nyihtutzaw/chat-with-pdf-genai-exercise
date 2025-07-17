@@ -1,28 +1,19 @@
-"""Chat endpoint implementation using LangChain."""
+"""Chat endpoint implementation with conversation management."""
 import logging
-import os
-from typing import List, Dict, Any
+from typing import Dict, Any, List
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, status
 
+from app.api.models.chat import ChatRequest, ChatResponse, ClearSessionResponse, IntentType
+from app.config.config import settings
+from app.config.llm import LLMConfig
+from app.core.vector_store import vector_store
+from app.services.conversation.state import conversation_manager
 from app.services.langchain_router import LangChainRouter
-from app.config.llm import LLMConfig, IntentType
-from app.api.models.chat import ChatRequest, ChatResponse
-from app.core.vector_store import VectorStore
 
 # Configure logger
 logger = logging.getLogger(__name__)
-router = APIRouter()
-
-# Get OpenAI API key from environment variables
-openai_api_key = os.getenv("OPENAI_API_KEY")
-if not openai_api_key:
-    raise ValueError("OPENAI_API_KEY environment variable is not set")
-
-# Initialize LLM config and router
-llm_config = LLMConfig(openai_api_key=openai_api_key)
-llm_router = LangChainRouter(llm_config)
-vector_store = VectorStore()
+router = APIRouter(prefix="/chat", tags=["chat"])
 
 def _format_search_results(search_results: List[Dict[str, Any]]) -> str:
     """Format search results into a user-friendly string."""
@@ -30,7 +21,7 @@ def _format_search_results(search_results: List[Dict[str, Any]]) -> str:
         return "I couldn't find any relevant information in the documents."
     
     formatted = []
-    for i, result in enumerate(search_results[:3], 1):
+    for result in search_results[:3]:
         # Get the text content from the result
         content = result.get('text', '').strip()
         if not content:
@@ -69,66 +60,106 @@ def _format_search_results(search_results: List[Dict[str, Any]]) -> str:
     # Join with double newlines for better readability
     return "\n\n".join(formatted)
 
-async def _process_chat_request(chat_request: ChatRequest) -> ChatResponse:
-    """Process a chat request and return the appropriate response."""
-    # If web search is forced, perform it immediately
-    if chat_request.force_web_search:
-        return await llm_router.route_query(
-            user_message=chat_request.message,
-            force_web_search=True
-        )
-    
-    # First, try to answer from PDFs
-    search_results = vector_store.search_similar(
-        chat_request.message,
-        min_similarity=0.5
-    )
-    
-    if search_results:
-        # Found relevant information in PDFs
-        return ChatResponse(
-            intent=IntentType.PDF_QUERY,
-            message=_format_search_results(search_results),
-            needs_clarification=False
-        )
-    
-    # No relevant information found in PDFs
-    response = await llm_router.route_query(
-        user_message=chat_request.message,
-        force_web_search=False
-    )
-    
-    # If the intent wasn't a greeting, inform user about searching the web
-    if response.intent != IntentType.GREETING:
-        response.message = "The system should recognize this is not covered in the PDFs and search the web."
-    
-    return response
+# Initialize LLM configuration with OpenAI API key from settings
+try:
+    llm_config = LLMConfig(openai_api_key=settings.OPENAI_API_KEY)
+    router_llm = LangChainRouter(llm_config)
+except ValueError as e:
+    logger.error(f"Failed to initialize LLM configuration: {str(e)}")
+    raise RuntimeError("Failed to initialize language model configuration. Please check your API keys.")
 
-@router.post("/chat", response_model=ChatResponse)
+async def _process_chat_request(chat_request: ChatRequest) -> Dict[str, Any]:
+    """Process a chat request and return the appropriate response."""
+    # Get or create conversation
+    conversation = conversation_manager.get_conversation(chat_request.session_id)
+    
+    # Add user message to conversation
+    conversation.add_message("user", chat_request.message, **chat_request.metadata)
+    
+    # Route the message based on intent
+    router_response = await router_llm.route_query(
+        chat_request.message,
+        force_web_search=chat_request.force_web_search
+    )
+    
+    # Handle different intents
+    if router_response.intent == IntentType.PDF_QUERY and not chat_request.force_web_search:
+        # Search the vector store for relevant documents
+        search_results = vector_store.search_similar(
+            query=chat_request.message,
+            limit=3
+        )
+        response_message = _format_search_results(search_results)
+    else:
+        # If the response suggests a web search but force_web_search is False, modify the message
+        if router_response.metadata and router_response.metadata.get('suggest_web_search') and not chat_request.force_web_search:
+            response_message = "The system should recognize this is not covered in the PDFs and search the web."
+        else:
+            response_message = router_response.message
+    
+    # Add assistant's response to conversation
+    conversation.add_message("assistant", response_message)
+    
+    # Get the conversation history for context
+    conversation_history = conversation.get_messages()
+    
+    return {
+        "intent": router_response.intent.value,
+        "message": response_message,
+        "session_id": conversation.session_id,
+        "needs_clarification": router_response.needs_clarification,
+        "clarification_questions": router_response.clarification_questions or [],
+        "follow_up_questions": router_response.follow_up_questions or [],
+        "conversation_history": conversation_history,
+        "metadata": router_response.metadata or {}
+    }
+
+@router.post("", response_model=ChatResponse)
 async def chat(chat_request: ChatRequest) -> ChatResponse:
     """
-    Handle chat messages and route them appropriately.
+    Handle chat messages with conversation management.
     
     Args:
-        chat_request: The chat request containing the message and options
+        chat_request: The chat request containing the message and session ID
         
     Returns:
-        ChatResponse: The response to the user's message
+        ChatResponse: The response to the user's message with conversation context
         
     Raises:
         HTTPException: If there's an error processing the request
     """
-    if not llm_config.is_configured:
-        raise HTTPException(
-            status_code=500,
-            detail="LLM service is not properly configured. Please check the API key."
-        )
-    
     try:
-        return await _process_chat_request(chat_request)
+        response_data = await _process_chat_request(chat_request)
+        return ChatResponse(**response_data)
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error("Error processing chat request: %s", str(e))
+        logger.error("Error processing chat request: %s", str(e), exc_info=True)
         raise HTTPException(
-            status_code=500,
-            detail=f"An error occurred while processing your request: {str(e)}"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred while processing your message"
+        ) from e
+
+@router.post("/sessions/{session_id}/clear", response_model=ClearSessionResponse)
+async def clear_session(session_id: str) -> ClearSessionResponse:
+    """
+    Clear the conversation history for a specific session.
+    
+    Args:
+        session_id: The ID of the session to clear
+        
+    Returns:
+        ClearSessionResponse: Status of the operation
+    """
+    try:
+        conversation_manager.clear_conversation(session_id)
+        return ClearSessionResponse(
+            status="success",
+            message=f"Session {session_id} cleared successfully"
+        )
+    except Exception as e:
+        logger.error("Error clearing session %s: %s", session_id, str(e), exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while clearing the session"
         ) from e

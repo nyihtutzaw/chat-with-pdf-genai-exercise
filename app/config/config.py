@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     # Application Settings
     DEBUG: bool = True
     
+    # OpenAI Configuration
+    OPENAI_API_KEY: str = ""  # Will be loaded from environment variables
+    
     # PDF Processing
     CHUNK_SIZE: int = 1000
     CHUNK_OVERLAP: int = 200

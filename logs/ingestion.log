@@ -804,3 +804,40 @@ KeyError: 'metadata'
 2025-07-17 18:05:54,366 - httpx - INFO - HTTP Request: PUT http://qdrant:6333/collections/documents/points?wait=true "HTTP/1.1 200 OK"
 2025-07-17 18:05:54,371 - __main__ - INFO - Successfully processed 414 chunks from /app/data/pdfs
 2025-07-17 18:05:54,375 - __main__ - INFO - Successfully processed 414 chunks in 19.21 seconds
+2025-07-17 19:05:35,995 - __main__ - INFO - Starting PDF ingestion from /app/data/pdfs
+2025-07-17 19:05:35,995 - __main__ - INFO - Using collection: documents
+2025-07-17 19:05:35,995 - __main__ - INFO - Chunk size: 1000, Overlap: 200, Batch size: 32
+2025-07-17 19:05:36,045 - httpx - INFO - HTTP Request: GET http://qdrant:6333 "HTTP/1.1 200 OK"
+2025-07-17 19:05:36,045 - sentence_transformers.SentenceTransformer - INFO - Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2025-07-17 19:05:52,731 - sentence_transformers.SentenceTransformer - INFO - Use pytorch device_name: cpu
+2025-07-17 19:05:52,735 - httpx - INFO - HTTP Request: GET http://qdrant:6333/collections "HTTP/1.1 200 OK"
+2025-07-17 19:05:52,737 - __main__ - INFO - Processing Zhang et al. - 2024 - Benchmarking the Text-to-SQL Capability of Large L.pdf
+2025-07-17 19:05:52,756 - scripts.pdf_processor - INFO - Processing PDF: Zhang et al. - 2024 - Benchmarking the Text-to-SQL Capability of Large L.pdf
+2025-07-17 19:05:53,423 - scripts.pdf_processor - INFO - Processed 97 chunks from Zhang et al. - 2024 - Benchmarking the Text-to-SQL Capability of Large L.pdf
+2025-07-17 19:05:53,987 - httpx - INFO - HTTP Request: PUT http://qdrant:6333/collections/documents/points?wait=true "HTTP/1.1 200 OK"
+2025-07-17 19:05:54,509 - httpx - INFO - HTTP Request: PUT http://qdrant:6333/collections/documents/points?wait=true "HTTP/1.1 200 OK"
+2025-07-17 19:05:55,153 - httpx - INFO - HTTP Request: PUT http://qdrant:6333/collections/documents/points?wait=true "HTTP/1.1 200 OK"
+2025-07-17 19:05:55,168 - httpx - INFO - HTTP Request: PUT http://qdrant:6333/collections/documents/points?wait=true "HTTP/1.1 200 OK"
+2025-07-17 19:05:55,173 - __main__ - INFO - Processing Rajkumar et al. - 2022 - Evaluating the Text-to-SQL Capabilities of Large L.pdf
+2025-07-17 19:05:55,175 - scripts.pdf_processor - INFO - Processing PDF: Rajkumar et al. - 2022 - Evaluating the Text-to-SQL Capabilities of Large L.pdf
+2025-07-17 19:05:55,370 - scripts.pdf_processor - INFO - Processed 45 chunks from Rajkumar et al. - 2022 - Evaluating the Text-to-SQL Capabilities of Large L.pdf
+2025-07-17 19:05:55,918 - httpx - INFO - HTTP Request: PUT http://qdrant:6333/collections/documents/points?wait=true "HTTP/1.1 200 OK"
+2025-07-17 19:05:56,148 - httpx - INFO - HTTP Request: PUT http://qdrant:6333/collections/documents/points?wait=true "HTTP/1.1 200 OK"
+2025-07-17 19:05:56,155 - __main__ - INFO - Processing Chang and Fosler-Lussier - 2023 - How to Prompt LLMs for Text-to-SQL A Study in Zer.pdf
+2025-07-17 19:05:56,157 - scripts.pdf_processor - INFO - Processing PDF: Chang and Fosler-Lussier - 2023 - How to Prompt LLMs for Text-to-SQL A Study in Zer.pdf
+2025-07-17 19:05:56,685 - scripts.pdf_processor - INFO - Processed 69 chunks from Chang and Fosler-Lussier - 2023 - How to Prompt LLMs for Text-to-SQL A Study in Zer.pdf
+2025-07-17 19:05:57,400 - httpx - INFO - HTTP Request: PUT http://qdrant:6333/collections/documents/points?wait=true "HTTP/1.1 200 OK"
+2025-07-17 19:05:58,030 - httpx - INFO - HTTP Request: PUT http://qdrant:6333/collections/documents/points?wait=true "HTTP/1.1 200 OK"
+2025-07-17 19:05:58,141 - httpx - INFO - HTTP Request: PUT http://qdrant:6333/collections/documents/points?wait=true "HTTP/1.1 200 OK"
+2025-07-17 19:05:58,147 - __main__ - INFO - Processing Katsogiannis-Meimarakis and Koutrika - 2023 - A survey on deep learning approaches for text-to-S.pdf
+2025-07-17 19:05:58,149 - scripts.pdf_processor - INFO - Processing PDF: Katsogiannis-Meimarakis and Koutrika - 2023 - A survey on deep learning approaches for text-to-S.pdf
+2025-07-17 19:05:59,933 - scripts.pdf_processor - INFO - Processed 203 chunks from Katsogiannis-Meimarakis and Koutrika - 2023 - A survey on deep learning approaches for text-to-S.pdf
+2025-07-17 19:06:00,511 - httpx - INFO - HTTP Request: PUT http://qdrant:6333/collections/documents/points?wait=true "HTTP/1.1 200 OK"
+2025-07-17 19:06:01,060 - httpx - INFO - HTTP Request: PUT http://qdrant:6333/collections/documents/points?wait=true "HTTP/1.1 200 OK"
+2025-07-17 19:06:01,598 - httpx - INFO - HTTP Request: PUT http://qdrant:6333/collections/documents/points?wait=true "HTTP/1.1 200 OK"
+2025-07-17 19:06:02,112 - httpx - INFO - HTTP Request: PUT http://qdrant:6333/collections/documents/points?wait=true "HTTP/1.1 200 OK"
+2025-07-17 19:06:02,682 - httpx - INFO - HTTP Request: PUT http://qdrant:6333/collections/documents/points?wait=true "HTTP/1.1 200 OK"
+2025-07-17 19:06:03,311 - httpx - INFO - HTTP Request: PUT http://qdrant:6333/collections/documents/points?wait=true "HTTP/1.1 200 OK"
+2025-07-17 19:06:03,513 - httpx - INFO - HTTP Request: PUT http://qdrant:6333/collections/documents/points?wait=true "HTTP/1.1 200 OK"
+2025-07-17 19:06:03,519 - __main__ - INFO - Successfully processed 414 chunks from /app/data/pdfs
+2025-07-17 19:06:03,522 - __main__ - INFO - Successfully processed 414 chunks in 27.53 seconds

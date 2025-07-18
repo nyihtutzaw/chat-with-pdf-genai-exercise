@@ -28,8 +28,12 @@ class PDFQueryAgent(BaseAgent):
         search_results = self.vector_store.search_similar(
             query=query,
             limit=3,
-            min_similarity=0.3
+            min_similarity=0.5
         )
+
+        print("search_results")
+        print(search_results)
+
 
 
         state["search_results"] = search_results
@@ -58,49 +62,25 @@ class ResponseAgent(BaseAgent):
         super().__init__("response_agent")
     
     async def process(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """Format the final response."""
-        search_results = state.get("search_results", [])
-        current_agent = state.get("current_agent", "")
-        messages = state.get("messages", [])
-
-       
-
-        last_message = messages[-1].get("content", "").lower() if messages else ""
-
+        """Format the final response.
         
-        # Check for greeting message
-        greeting_phrases = {"hi", "hello", "hey", "greetings", "good morning", "good afternoon", "good evening"}
-        is_greeting = any(phrase in last_message for phrase in greeting_phrases)
-        
-        if is_greeting :
-            state["response"] = (
-                "Hello! I'm your AI assistant. How can I help you today?\n\n"
-                "I can help you with:\n"
-                "- Answering questions about your documents\n"
-                "- Searching the web for information\n"
-                "- And much more!"
-            )
+        If the state already contains a response (e.g., from greeting in orchestrator),
+        it will be returned as is. Otherwise, formats search results from either
+        web search or PDF query.
+        """
+        # If we already have a response, just add follow-up questions and return
+        if state.get("response"):
             state["follow_up_questions"] = [
                 "What would you like to know?",
                 "How can I assist you today?",
-                "Would you like to search for something specific?"
-            ]
-            return state
-            
-        if not search_results:
-            state["response"] = "I couldn't find any relevant information. Could you please provide more details or try a different query?"
-            state["needs_clarification"] = True
-            state["clarification_questions"] = [
-                "Would you like me to try a different search?",
-                "Could you provide more specific details about what you're looking for?"
+                "Is there something specific you'd like to ask?",
+                "Would you like to search for something?"
             ]
             return state
             
         formatted_results = []
-
-  
-
-       
+        search_results = state.get("search_results", [])
+        current_agent = state.get("current_agent", "")
         
         if current_agent == "web_search_agent":
             # Format web search results
@@ -114,22 +94,13 @@ class ResponseAgent(BaseAgent):
                     snippet = snippet[:200] + "..."
                     
                 formatted_results.append(
-                    f"{i}. **{title}**\n"
-                    f"{snippet}\n"
-                    f"[Read more]({link})\n"
+                    f"{i}. {title}\n"
+                    f"   URL: {link}\n"
+                    f"   Snippet: {snippet}\n"
                 )
-            
-            if formatted_results:
-                state["response"] = "Here's what I found:\n\n" + "\n".join(formatted_results)
-                state["follow_up_questions"] = [
-                    "Would you like me to search for more information?",
-                    "Is there anything specific you'd like to know more about?"
-                ]
-            else:
-                state["response"] = "I couldn't find any relevant information. Would you like me to try a different search?"
-                state["needs_clarification"] = True
-        else:
-            # Format PDF search results
+                
+        elif current_agent == "pdf_query_agent":
+            # Format PDF query results
             for i, result in enumerate(search_results[:3], 1):
                 text = result.get("text", "").strip()
                 source = result.get("metadata", {}).get("source", "Document")
@@ -139,17 +110,31 @@ class ResponseAgent(BaseAgent):
                 if len(text) > 200:
                     text = text[:200] + "..."
                     
-                source_info = f"{source} (page {page})" if page else source
-                formatted_results.append(f"{i}. **From {source_info}**: {text}")
-            
-            if formatted_results:
-                state["response"] = "Here's what I found in the documents:\n\n" + "\n\n".join(formatted_results)
-            else:
-                state["response"] = "I couldn't find any relevant information in the documents. Would you like me to search the web instead?"
-                state["needs_clarification"] = True
-                state["clarification_questions"] = [
-                    "Would you like me to search the web for this information?",
-                    "Would you like to try a different query?"
-                ]
+                formatted_results.append(
+                    f"{i}. From {source} (Page {page}):\n"
+                    f"   {text}\n"
+                )
+        
+        # Add follow-up questions
+        state["follow_up_questions"] = [
+            "Can you provide more details about this?",
+            "Would you like to search for something else?",
+            "Is there anything specific you'd like to know more about?",
+            "Would you like me to refine the search?"
+        ]
+        
+        # Format the final response
+        if formatted_results:
+            state["response"] = "Here's what I found:\n\n" + "\n".join(formatted_results)
+        else:
+            state["response"] = (
+                "I couldn't find any relevant information. "
+                "Could you please provide more details or try a different query?"
+            )
+            state["needs_clarification"] = True
+            state["clarification_questions"] = [
+                "Would you like me to search the web for this information?",
+                "Would you like to try a different query?"
+            ]
         
         return state

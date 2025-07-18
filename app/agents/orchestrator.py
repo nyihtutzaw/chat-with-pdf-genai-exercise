@@ -5,13 +5,16 @@ to process user queries based on their intent. The workflow includes intent clas
 document querying, web search, and response generation.
 """
 import logging
-from typing import Dict, Any, Callable, Awaitable
+import re
+from typing import Any, Callable, Awaitable, Dict, Tuple
 
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.runnables import RunnablePassthrough
 from langgraph.graph import Graph, END
 
-from .base import PDFQueryAgent, WebSearchAgent, ResponseAgent
-from ..services.langchain_router import LangChainRouter, IntentType
-from ..config import LLMConfig
+from app.agents.base import PDFQueryAgent, WebSearchAgent, ResponseAgent
+from app.config.llm import LLMConfig
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -30,8 +33,9 @@ class AgentOrchestrator:
             "web_search": WebSearchAgent(),
             "response": ResponseAgent()
         }
-        # Initialize the router with LLM config
-        self.router = LangChainRouter(LLMConfig())
+        # Initialize the LLM config
+        self.llm_config = LLMConfig()
+        self.intent_classifier = self._create_intent_classifier()
         self.workflow = self._create_workflow()
     
     def _create_workflow(self) -> Graph:
@@ -56,12 +60,43 @@ class AgentOrchestrator:
         
         # Define routing function that returns the next node based on intent
         def route_after_classify(state: Dict[str, Any]) -> str:
+            # If we already have a response (e.g., from greeting), go to response node
+            if state.get("response"):
+                return "response"
+                
             intent = state.get("intent", "response")
+            
+            # If force_web_search is True, go directly to web search
+            metadata = state.get("messages", [{}])[-1].get("metadata", {})
+            if metadata.get("force_web_search", False):
+                return "web_search"
+                
+            # Route based on intent
             if intent == "pdf":
                 return "pdf_query"
             elif intent == "web":
                 return "web_search"
+                
             return "response"  # Default to response node
+            
+        def route_after_pdf(state: Dict[str, Any]) -> str:
+            # If we have search results, go to response
+            if state.get("search_results"):
+                return "response"
+                
+            # If we should try web search after PDF, go to web search
+            if state.get("metadata", {}).get("should_try_web_after_pdf", False):
+                # Update the message to indicate we're falling back to web search
+                if state.get("messages"):
+                    query = state["messages"][-1].get("content", "")
+                    state["messages"][-1]["content"] = (
+                        f"I couldn't find any relevant information in the PDFs. "
+                        f"Searching the web for: {query}"
+                    )
+                return "web_search"
+                
+            # Otherwise, go to response with no results
+            return "response"
         
         # Add edges from classify_intent to the appropriate nodes
         workflow.add_conditional_edges(
@@ -69,8 +104,13 @@ class AgentOrchestrator:
             route_after_classify
         )
         
+        # Add conditional edge after PDF query to handle fallback to web search
+        workflow.add_conditional_edges(
+            "pdf_query",
+            route_after_pdf
+        )
+        
         # Add edges from agent nodes to the response node
-        workflow.add_edge("pdf_query", "response")
         workflow.add_edge("web_search", "response")
         workflow.add_edge("response", END)
         
@@ -80,87 +120,330 @@ class AgentOrchestrator:
         # Compile the workflow
         return workflow.compile()
     
-    async def _classify_intent_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """Node function for intent classification using LangChain router.
-        
-        This node:
-        1. Extracts the latest user message
-        2. Uses the router to determine intent
-        3. Updates the state with intent and metadata
-        4. Ensures all required fields are present in the state
-        
-        Args:
-            state: The current conversation state
-            
-        Returns:
-            Updated state with intent classification
-        """
-        # Ensure messages exist and get the latest user message
-        messages = state.get("messages", [])
-        query = messages[-1].get("content", "") if messages else ""
+    def _initialize_state(self, state: Dict[str, Any]) -> tuple:
+        """Initialize and extract necessary values from the state."""
+        messages = state.get("messages", [{}])
+        last_message = messages[-1] if messages else {}
+        query = last_message.get("content", "")
+        metadata = last_message.get("metadata", {})
         
         # Initialize default values
         state.setdefault("intent", "response")
         state.setdefault("metadata", {})
         state["metadata"].setdefault("intent_classification", {})
         
-        try:
-            # Get the routing decision from the router
-            routing_decision = await self.router.route_query(query)
-            
-            # Map the router's intent to our node's intent
-            if routing_decision.intent == IntentType.PDF_QUERY:
-                state["intent"] = "pdf"
-            elif routing_decision.intent == IntentType.WEB_SEARCH:
-                state["intent"] = "web"
-            elif routing_decision.intent == IntentType.GREETING:
-                state["intent"] = "response"  # Greetings go straight to response
-            else:
-                state["intent"] = "response"
-            
-            # Store detailed classification info in metadata
+        return state, query, metadata
+    
+    def _handle_web_search_override(self, state: Dict[str, Any], metadata: Dict[str, Any]) -> bool:
+        """Handle force_web_search flag and return True if handled."""
+        if metadata.get("force_web_search", False):
+            state["intent"] = "web"
             state["metadata"]["intent_classification"] = {
-                "detected_intent": routing_decision.intent.value,
+                "detected_intent": "web_search",
+                "confidence": 1.0,
+                "needs_clarification": False,
+                "source": "force_web_search_flag"
+            }
+            return True
+        return False
+    
+    def _handle_pdf_fallback(self, state: Dict[str, Any]) -> bool:
+        """Handle PDF fallback to web search and return True if handled."""
+        if state.get("previous_intent") == "pdf" and not state.get("search_results"):
+            # Check if we should try web search after PDF search
+            if state.get("metadata", {}).get("should_try_web_after_pdf", False):
+                state["intent"] = "web"
+                state["metadata"]["intent_classification"] = {
+                    "detected_intent": "web_search",
+                    "confidence": 0.9,
+                    "needs_clarification": False,
+                    "source": "pdf_search_fallback"
+                }
+                state["response"] = "This information isn't available in the PDFs. Let me search the web for you."
+                return True
+            # If we were supposed to find something in PDFs but didn't
+            elif not state.get("metadata", {}).get("force_web_search", False):
+                state["response"] = "I couldn't find any relevant information in the PDFs. " \
+                                  "If you'd like me to search the web, please enable web search."
+                return True
+        return False
+    
+    def _apply_keyword_fallback(self, state: Dict[str, Any], query: str) -> None:
+        """Apply keyword-based intent classification as a fallback."""
+        query_lower = query.lower()
+        if any(keyword in query_lower for keyword in ["search", "find", "look up"]):
+            state["intent"] = "web"
+        elif any(keyword in query_lower for keyword in ["document", "pdf", "file"]):
+            state["intent"] = "pdf"
+        else:
+            state["intent"] = "response"
+    
+    def _ensure_dict_state(self, state: Any) -> Dict[str, Any]:
+        """Ensure the state is a dictionary and return a mutable copy."""
+        if isinstance(state, dict):
+            return dict(state)
+            
+        try:
+            if hasattr(state, '_asdict'):
+                return state._asdict()
+            if isinstance(state, (tuple, list)):
+                return dict(enumerate(state))
+            return dict(state) if state is not None else {}
+        except (TypeError, ValueError):
+            return {'_state': state}
+
+    def _initialize_intent_state(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """Initialize the state dictionary with required fields."""
+        state = self._ensure_dict_state(state)
+        
+        # Ensure metadata exists and is mutable
+        state['metadata'] = self._ensure_dict_state(state.get('metadata', {}))
+        
+        # Initialize required state fields if they don't exist
+        state.setdefault('messages', [])
+        state.setdefault('intent', 'response')
+        state.setdefault('needs_clarification', False)
+        state.setdefault('clarification_questions', [])
+        state.setdefault('follow_up_questions', [])
+        state.setdefault('search_results', [])
+        
+        # Initialize any additional state fields
+        return self._initialize_state(state)[0]  # Only return the state, not the tuple
+    
+    
+    def _handle_web_search_flag(self, state: Dict[str, Any], metadata: Dict[str, Any]) -> bool:
+        """Handle the force_web_search flag in metadata."""
+        if not metadata.get("force_web_search", False):
+            return False
+            
+        state["intent"] = "web"
+        state["metadata"]["intent_classification"] = {
+            "detected_intent": "web_search",
+            "confidence": 1.0,
+            "needs_clarification": False,
+            "source": "force_web_search_flag"
+        }
+        return True
+            
+    def _create_intent_classifier(self):
+        """Create the intent classification chain."""
+        intent_prompt = """
+        You are an intent classification system for a chat application that helps users with PDF documents.
+        
+        Classify the following message into one of these intents:
+        - greeting: For greetings like hello, hi, hey, good morning/afternoon/evening, what's up, etc.
+        - pdf_query: When asking about PDF document content
+        - web_search: For general knowledge questions not specific to PDFs
+        - clarification_needed: When the intent is unclear
+        
+        Message to classify: {message}
+        
+        Respond with a JSON object containing:
+        - intent: The classified intent (greeting, pdf_query, web_search, or clarification_needed)
+        - confidence: A number between 0 and 1 indicating your confidence
+        - reasoning: A brief explanation of your classification
+        """
+        
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", intent_prompt),
+            ("human", "{message}")
+        ])
+        
+        # Create a chain that takes a message and returns a classification
+        return (
+            {"message": RunnablePassthrough()}
+            | prompt
+            | self.llm_config.llm
+            | JsonOutputParser()
+        )
+        
+    def _detect_ambiguity(self, message: str) -> Tuple[bool, str, str]:
+        """Check if the message is ambiguous using comprehensive patterns.
+        
+        Returns:
+            tuple[bool, str, str]: A tuple containing:
+                - bool: True if the message is ambiguous, False otherwise
+                - str: The clarification message to show to the user
+                - str: An example of how to rephrase the question
+        """
+        # Check for short or incomplete messages first
+        if len(message.strip().split()) <= 3 and not any(p in message.lower() for p in ['hi', 'hello', 'hey']):
+            return True, "Your question seems a bit brief. Could you provide more details?", \
+                   "For example, instead of 'How to?', try 'How do I implement a neural network in PyTorch for image classification?'"
+        
+        ambiguity_patterns = [
+            # Vague quantity questions
+            {
+                'pattern': r'\b(how many|how much|what (?:is|are) (?:the )?(?:number|amount|quantity))\b.*\b(enough|sufficient|good|required|necessary|adequate|appropriate|suitable|decent|reasonable|acceptable|satisfactory|optimal|ideal|recommended|suggested)\b',
+                'clarification': "I'm not sure I understand your question. Could you explain what you mean by 'enough' in this context?",
+                'example': "For example, instead of 'How many examples are enough for good accuracy?', try 'How many training examples do I need to achieve 95% accuracy on the test set for sentiment analysis?'"
+            },
+            # Vague quality questions
+            {
+                'pattern': r'\b(is|are|does|do|will|would|can|could|should|might|may)\b.*\b(bad|worse|faster|slower|more accurate|less accurate|more efficient|less efficient|more effective|less effective|superior|inferior|preferable|optimal)\b',
+                'clarification': "I'm not sure I understand your question. Could you explain what you mean by 'good/bad' in this context?",
+                'example': "For example, instead of 'Is this model good?', try 'How does this model's 90% accuracy compare to state-of-the-art on the IMDB dataset?'"
+            },
+            # Vague comparison questions
+            {
+                'pattern': r'\b(which|what) (is|are) (better)\b',
+                'clarification': "To help you compare effectively, could you explain what you mean by 'better' in this context?",
+                'example': "For example, instead of 'Which model is better?', try 'Which model has higher F1 score on small text classification tasks with limited training data?'"
+            },
+            # Vague requests for information
+            {
+                'pattern': r'\b(tell me about|what (?:is|are)|explain|describe|how (?:do|does)|what (?:do|does)|what (?:is|are) (?:the|a|an)|can you (?:tell|explain|describe))\b',
+                'clarification': "I'd be happy to help! Could you be more specific about what you'd like to know?",
+                'example': "For example, instead of 'Tell me about transformers', try 'What are the key components of the transformer architecture in NLP?'"
+            }
+        ]
+
+        for pattern_info in ambiguity_patterns:
+            if re.search(pattern_info['pattern'], message, re.IGNORECASE):
+                return True, pattern_info['clarification'], pattern_info['example']
+
+        return False, "", ""
+
+    async def _classify_intent_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """Node function for intent classification using LLM.
+        
+        This node:
+        1. If force_web_search is True, goes to web search
+        2. Otherwise, checks for ambiguous questions
+        3. Uses LLM to classify the intent
+           - greeting: Returns a greeting response
+           - pdf_query: Routes to PDF query handler
+           - web_search: Routes to web search
+           - clarification_needed: Asks for clarification
+        """
+        # Initialize state with required fields
+        state = self._initialize_intent_state(state)
+        
+        try:
+            # Get the latest user message
+            messages = state.get("messages", [])
+            if not messages:
+                raise ValueError("No messages in conversation")
+                
+            last_message = messages[-1]
+            query = last_message.get("content", "").strip()
+            metadata = last_message.get("metadata", {})
+            
+            # 1. Check for force_web_search flag first
+            if self._handle_web_search_flag(state, metadata):
+                return state
+            
+            # 2. Check for ambiguous questions
+            is_ambiguous, clarification_msg, example = self._detect_ambiguity(query)
+            if is_ambiguous:
+                state["intent"] = "response"
+                state["response"] = f"{clarification_msg}\n\n{example}"
+                state["metadata"]["intent_classification"] = {
+                    "detected_intent": "clarification_needed",
+                    "confidence": 0.9,
+                    "needs_clarification": True,
+                    "is_ambiguous": True,
+                    "reasoning": "Question was detected as ambiguous",
+                    "source": "ambiguity_detector"
+                }
+                return state
+            
+            # 3. Classify intent using the intent classifier
+            classification = await self.intent_classifier.ainvoke(query)
+            
+            # Update state based on the classified intent
+            intent = classification.get("intent", "web_search")
+            state["metadata"]["intent_classification"] = {
+                "detected_intent": intent,
+                "confidence": classification.get("confidence", 1.0),
+                "needs_clarification": intent == "clarification_needed",
+                "reasoning": classification.get("reasoning", ""),
+                "source": "llm_intent_classifier"
+            }
+            
+            # Handle greeting intent
+            if intent == "greeting":
+                state["intent"] = "response"
+                state["response"] = "Hello! How can I assist you today?"
+                return state
+                
+            # Handle PDF query intent
+            if intent == "pdf_query":
+                state["intent"] = "pdf"
+                state["metadata"]["should_try_web_after_pdf"] = True
+                state["metadata"]["original_query"] = query
+                return state
+                
+            # Default to web search for other intents
+            state["intent"] = "pdf_query"
+            
+            # Ensure all required fields are present
+            for field in ["needs_clarification", "clarification_questions", 
+                         "follow_up_questions", "search_results"]:
+                state.setdefault(field, [] if field.endswith('s') else False)
+            
+            return state
+            
+        except Exception as e:  # pylint: disable=broad-except
+            logger.error(
+                "Unexpected error in _classify_intent_node: %s",
+                str(e),
+                exc_info=True
+            )
+            return self._handle_classification_error(
+                state, 
+                query if 'query' in locals() else ""
+            )
+    
+    async def _classify_intent(self, state: Dict[str, Any], query: str) -> None:
+        """Classify the intent of the user's query."""
+        try:
+            routing_decision = await self.router.route_query(query)
+            detected_intent = routing_decision.intent
+            
+            if detected_intent == IntentType.PDF_QUERY:
+                state["intent"] = "pdf"
+                state["metadata"].update({
+                    "should_try_web_after_pdf": True,
+                    "original_query": query
+                })
+            else:  # Default to web search for other intents
+                state["intent"] = "web"
+            
+            # Store classification metadata
+            state["metadata"]["intent_classification"] = {
+                "detected_intent": detected_intent.value,
                 "confidence": getattr(routing_decision, 'confidence', 1.0),
                 "needs_clarification": getattr(routing_decision, 'needs_clarification', False),
                 "source": "llm_router"
             }
             
-            # If clarification is needed, update response fields
-            if getattr(routing_decision, 'needs_clarification', False):
-                state["needs_clarification"] = True
-                state["clarification_questions"] = getattr(
-                    routing_decision, 
-                    'clarification_questions', 
-                    ["Could you please clarify your request?"]
-                )
-            
         except Exception as e:  # pylint: disable=broad-except
-            logger.error("Error in intent classification: %s", str(e))
-            # Fallback to simple keyword matching if router fails
-            query_lower = query.lower()
-            if any(keyword in query_lower for keyword in ["search", "find", "look up"]):
-                state["intent"] = "web"
-            elif any(keyword in query_lower for keyword in ["document", "pdf", "file"]):
-                state["intent"] = "pdf"
-            else:
-                state["intent"] = "response"
-                
-            # Update metadata to indicate fallback was used
-            state["metadata"]["intent_classification"] = {
-                "detected_intent": "fallback_keyword_matching",
-                "confidence": 0.5,
-                "needs_clarification": False,
-                "source": "fallback",
-                "error": str(e)
-            }
+            logger.warning("Error in router: %s", str(e))
+            self._handle_classification_fallback(state)
+    
+    def _handle_classification_fallback(self, state: Dict[str, Any]) -> None:
+        """Handle fallback when intent classification fails."""
+        state["intent"] = "web"
+        state["metadata"]["intent_classification"] = {
+            "detected_intent": "web_search",
+            "confidence": 0.7,
+            "needs_clarification": False,
+            "source": "fallback"
+        }
+    
+    def _handle_classification_error(self, state: Dict[str, Any], query: str) -> Dict[str, Any]:
+        """Handle errors during intent classification."""
+        state["intent"] = "response"
+        state["needs_clarification"] = True
+        state["clarification_questions"] = [
+            "I'm having trouble understanding your request. Could you please rephrase?"
+        ]
         
-        # Ensure all required fields are present in the state
-        state.setdefault("needs_clarification", False)
-        state.setdefault("clarification_questions", [])
-        state.setdefault("follow_up_questions", [])
-        state.setdefault("search_results", [])
-                
+        # Apply keyword fallback if possible
+        if query:
+            self._apply_keyword_fallback(state, query)
+            
         return state
     
     # Removed _route_by_intent - replaced with inline route_after_classify function in _create_workflow
@@ -233,7 +516,7 @@ class AgentOrchestrator:
                 
         return node_func
     
-    async def process_message(self, message: str, session_id: str) -> Dict[str, Any]:
+    async def process_message(self, message: str, session_id: str, force_web_search: bool = False) -> Dict[str, Any]:
         """Process a user message through the agent workflow.
         
         This method:
@@ -245,13 +528,14 @@ class AgentOrchestrator:
         Args:
             message: The user's message
             session_id: The conversation session ID
+            force_web_search: If True, forces a web search regardless of message content
             
         Returns:
             A dictionary containing the response data with all required fields for ChatResponse
         """
         # Initialize the state with user message and default values
         state = {
-            "messages": [{"role": "user", "content": message}],
+            "messages": [{"role": "user", "content": message, "metadata": {}}],
             "session_id": session_id,
             "intent": "response",
             "needs_clarification": False,
@@ -260,9 +544,14 @@ class AgentOrchestrator:
             "search_results": [],
             "metadata": {
                 "session_id": session_id,
-                "processing_steps": ["started"]
+                "processing_steps": ["started"],
+                "force_web_search": force_web_search
             }
         }
+        
+        # If force_web_search is True, set the intent to web
+        if force_web_search:
+            state["intent"] = "web"
         
         # Run the workflow
         try:

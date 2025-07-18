@@ -38,12 +38,20 @@ def _format_conversation_history(messages: list) -> list:
             })
     return formatted_messages
 
-async def _process_with_agent(conversation, message: str, session_id: str) -> dict:
-    """Process a message through the agent workflow."""
+async def _process_with_agent(conversation, message: str, session_id: str, force_web_search: bool = False) -> dict:
+    """Process a message through the agent workflow.
+    
+    Args:
+        conversation: The conversation object
+        message: The user's message
+        session_id: The conversation session ID
+        force_web_search: If True, forces a web search regardless of message content
+    """
     try:
         result = await agent_orchestrator.process_message(
             message=message,
-            session_id=session_id
+            session_id=session_id,
+            force_web_search=force_web_search
         )
         
         # Ensure we have a valid response message
@@ -121,6 +129,10 @@ async def _process_chat_request(chat_request: ChatRequest) -> Dict[str, Any]:
         user_msg_metadata = {}
         if hasattr(chat_request, 'metadata'):
             user_msg_metadata.update(chat_request.metadata)
+        
+        # Add force_web_search flag to metadata if it's True
+        if hasattr(chat_request, 'force_web_search') and chat_request.force_web_search:
+            user_msg_metadata['force_web_search'] = True
             
         conversation.add_message(
             role="user", 
@@ -133,7 +145,8 @@ async def _process_chat_request(chat_request: ChatRequest) -> Dict[str, Any]:
         agent_result = await _process_with_agent(
             conversation=conversation,
             message=chat_request.message,
-            session_id=chat_request.session_id
+            session_id=chat_request.session_id,
+            force_web_search=getattr(chat_request, 'force_web_search', False)
         )
         
         if not agent_result.get("success"):

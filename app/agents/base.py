@@ -30,7 +30,8 @@ class PDFQueryAgent(BaseAgent):
             limit=3,
             min_similarity=0.3
         )
-        
+
+
         state["search_results"] = search_results
         state["current_agent"] = self.name
         return state
@@ -61,13 +62,17 @@ class ResponseAgent(BaseAgent):
         search_results = state.get("search_results", [])
         current_agent = state.get("current_agent", "")
         messages = state.get("messages", [])
+
+       
+
         last_message = messages[-1].get("content", "").lower() if messages else ""
+
         
         # Check for greeting message
         greeting_phrases = {"hi", "hello", "hey", "greetings", "good morning", "good afternoon", "good evening"}
         is_greeting = any(phrase in last_message for phrase in greeting_phrases)
         
-        if is_greeting:
+        if is_greeting :
             state["response"] = (
                 "Hello! I'm your AI assistant. How can I help you today?\n\n"
                 "I can help you with:\n"
@@ -92,6 +97,10 @@ class ResponseAgent(BaseAgent):
             return state
             
         formatted_results = []
+
+  
+
+       
         
         if current_agent == "web_search_agent":
             # Format web search results

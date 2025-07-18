@@ -65,12 +65,16 @@ class AgentOrchestrator:
                 return "response"
                 
             intent = state.get("intent", "response")
+
+          
             
             # If force_web_search is True, go directly to web search
             metadata = state.get("messages", [{}])[-1].get("metadata", {})
             if metadata.get("force_web_search", False):
                 return "web_search"
                 
+           
+
             # Route based on intent
             if intent == "pdf":
                 return "pdf_query"
@@ -352,7 +356,7 @@ class AgentOrchestrator:
             classification = await self.intent_classifier.ainvoke(query)
             
             # Update state based on the classified intent
-            intent = classification.get("intent", "web_search")
+            intent = classification.get("intent", "pdf_query")
             state["metadata"]["intent_classification"] = {
                 "detected_intent": intent,
                 "confidence": classification.get("confidence", 1.0),
@@ -360,6 +364,8 @@ class AgentOrchestrator:
                 "reasoning": classification.get("reasoning", ""),
                 "source": "llm_intent_classifier"
             }
+
+       
             
             # Handle greeting intent
             if intent == "greeting":
@@ -375,7 +381,7 @@ class AgentOrchestrator:
                 return state
                 
             # Default to web search for other intents
-            state["intent"] = "pdf_query"
+            state["intent"] = "pdf"
             
             # Ensure all required fields are present
             for field in ["needs_clarification", "clarification_questions", 

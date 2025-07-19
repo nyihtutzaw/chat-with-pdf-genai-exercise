@@ -66,14 +66,11 @@ class AgentOrchestrator:
                 
             intent = state.get("intent", "response")
 
-          
-            
             # If force_web_search is True, go directly to web search
-            metadata = state.get("messages", [{}])[-1].get("metadata", {})
+            metadata = state.get("metadata", {})
             if metadata.get("force_web_search", False):
                 return "web_search"
-                
-           
+
 
             # Route based on intent
             if intent == "pdf":
@@ -134,19 +131,6 @@ class AgentOrchestrator:
         state["metadata"].setdefault("intent_classification", {})
         
         return state, query, metadata
-    
-    def _handle_web_search_override(self, state: Dict[str, Any], metadata: Dict[str, Any]) -> bool:
-        """Handle force_web_search flag and return True if handled."""
-        if metadata.get("force_web_search", False):
-            state["intent"] = "web"
-            state["metadata"]["intent_classification"] = {
-                "detected_intent": "web_search",
-                "confidence": 1.0,
-                "needs_clarification": False,
-                "source": "force_web_search_flag"
-            }
-            return True
-        return False
     
     
     def _apply_keyword_fallback(self, state: Dict[str, Any], query: str) -> None:
@@ -505,6 +489,9 @@ class AgentOrchestrator:
         return node_func
     
     async def process_message(self, message: str, session_id: str, force_web_search: bool = False) -> Dict[str, Any]:
+       
+    
+        
         """Process a user message through the agent workflow.
         
         This method:
@@ -522,6 +509,8 @@ class AgentOrchestrator:
             A dictionary containing the response data with all required fields for ChatResponse
         """
         # Initialize the state with user message and default values
+
+       
         state = {
             "messages": [{"role": "user", "content": message, "metadata": {}}],
             "session_id": session_id,
@@ -537,9 +526,6 @@ class AgentOrchestrator:
             }
         }
         
-        # If force_web_search is True, set the intent to web
-        if force_web_search:
-            state["intent"] = "web"
         
         # Run the workflow
         try:

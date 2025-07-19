@@ -1,151 +1,76 @@
-# Chat with PDF - Academic Paper Q&A System
+# Chat with PDF - AI-Powered Document Assistant
 
-A sophisticated backend system for intelligent question-answering over academic PDF papers using FastAPI and modern AI technologies.
+## Quick Start with Docker
 
-## Features
+### Prerequisites
 
-- **FastAPI** backend with async support and automatic API documentation
-- **Multi-Agent Architecture** for handling complex queries
-- **Retrieval-Augmented Generation (RAG)** for accurate, source-based answers
-- **Session-based Memory** for contextual conversations
-- **Web Search Integration** for queries requiring external information
-- **Containerized** with Docker for easy deployment
-- **Production-ready** configuration with environment variables
-- **CORS** support for frontend integration
-- **Health Check** endpoint for monitoring
-- **Interactive API Documentation** with Swagger UI and ReDoc
+- Docker 20.10+
+- Docker Compose 2.0+
+- OpenAI API key
 
-## Prerequisites
+### Running the Application
 
-- Python 3.10+
-- Docker 20.10+ and Docker Compose v2.0+
-- Git
-- (Optional) OpenAI API key for LLM integration
-
-## Quick Start
-
-### With Docker (Recommended)
-
-1. Clone the repository:
+1. **Clone the repository**:
 
    ```bash
-   git clone https://github.com/yourusername/chat-with-pdf.git
+   git clone <repository-url>
    cd chat-with-pdf
    ```
 
-2. Copy the example environment file and update with your settings:
+2. **Set up environment variables**:
 
    ```bash
    cp .env.example .env
-   # Edit .env file with your API keys and settings
+   # Edit .env and add your OpenAI API key
+   nano .env
    ```
 
-3. Build and start the services:
+3. **Build and start the services**:
 
    ```bash
-   docker-compose up --build -d
+   docker-compose up -d --build
    ```
 
-4. Access the API:
+   This will start:
+   - Web application (FastAPI)
+   - Qdrant vector database
+   - Redis for caching
+   - Monitoring tools
 
-   - API: http://localhost:8000
-   - Swagger UI: http://localhost:8000/api/v1/docs
-   - ReDoc: http://localhost:8000/api/v1/redoc
+4. **Add PDF documents**:
 
-### Local Development
+   Place your PDF files in the `data/pdfs` directory. The system will automatically process and index them when the container starts.
 
-1. Create and activate a virtual environment:
+5. **Access the application**:
+   > **Note**: The first startup may take a few minutes as it processes and indexes your PDFs.
+   - Web Interface: [http://localhost:8000](http://localhost:8000)
+   - API Documentation: [http://localhost:8000/api/v1/docs](http://localhost:8000/api/v1/docs)
+   - Qdrant Dashboard: [http://localhost:6333/dashboard](http://localhost:6333/dashboard)
 
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
+### Stopping the Application
 
-2. Install dependencies:
+To stop all services:
 
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. Set up environment variables:
-
-   ```bash
-   cp .env.example .env
-   # Edit .env file with your settings
-   ```
-
-4. Run the development server:
-
-   ```bash
-   uvicorn app.main:app --reload
-   ```
-
-## Project Structure
-
-```text
-chat-with-pdf/
-├── app/                           # Main application package
-│   ├── api/                       # API endpoints and routes
-│   │   ├── __init__.py
-│   │   ├── routers/               # API route modules
-│   │   │   ├── __init__.py
-│   │   │   ├── chat.py            # Chat endpoints
-│   │   │   └── health.py          # Health check endpoint
-│   │   └── dependencies.py        # API dependencies
-│   │
-│   ├── config/                    # Configuration management
-│   │   ├── __init__.py
-│   │   ├── config.py              # Main configuration
-│   │   └── cors.py                # CORS configuration
-│   │
-│   └── main.py                    # Application entry point
-│
-├── data/                          # Data directory for PDF storage
-│   └── .gitkeep
-│
-├── tests/                         # Test files (to be added)
-│   └── __init__.py
-│
-├── .dockerignore
-├── .env.example                  # Example environment variables
-├── .gitignore
-├── .pre-commit-config.yaml       # Pre-commit hooks configuration
-├── docker-compose.yml            # Docker Compose configuration
-├── Dockerfile                    # Docker configuration
-├── pyproject.toml               # Project metadata and build configuration
-├── README.md                    # This file
-└── requirements.txt             # Project dependencies
+```bash
+docker-compose down
 ```
 
-## API Documentation
+### Viewing Logs
 
-### Health Check
-- `GET /api/v1/health` - Check API health status
+View application logs:
 
-### Chat
+```bash
+docker-compose logs -f web
+```
 
-- `POST /api/v1/ask` - Ask a question about PDF content
+View Qdrant logs:
 
-  Request body:
+```bash
+docker-compose logs -f qdrant
+```
 
-  ```json
-  {
-    "question": "What is the main contribution of this paper?",
-    "session_id": "optional-session-id"
-  }
-  ```
+## Documentation
 
-## Development
+For a detailed [high-level overview of the system architecture and components](ARCHITECTURE_OVERVIEW.md), please see the architecture documentation.
 
-### Environment Variables
-
-Create a `.env` file based on `.env.example` and configure:
-
-3. **Run the development server**
-   ```bash
-   uvicorn app.main:app --reload
-   ```
-
-## License
-
-This project is licensed under the MIT License.
+For information about the automated PDF ingestion process, see [Data Ingestion Documentation](DATA_INGESTION.md).

@@ -420,26 +420,15 @@ class AgentOrchestrator:
             # Handle follow-up questions
             if intent == "follow_up":
 
-                print("here it is ")
+          
 
                 context = classification.get("context", "")
                 if context:
                     # If we have context, use it to modify the query
                     modified_query = f"{context} {query}"
                     state["metadata"]["original_query"] = modified_query
-                    
-                    # For follow-ups about people, places, or things previously searched, default to web search
-                    if any(term in query.lower() for term in ["he", "she", "it", "they", "that", "this", "the"]):
-                        state["intent"] = "web"
-                        # Force web search to get fresh information
-                        state["metadata"]["force_web_search"] = True
-                        return state
-                    
-                    # For other follow-ups, check the context
-                    if any(term in context.lower() for term in ["search", "find", "look up"]):
-                        state["intent"] = "web"
-                    else:
-                        state["intent"] = "pdf"
+                    state["intent"] = "pdf"
+                    state["metadata"]["context"] = context
                     return state
                 
             # Default to web search for other intents

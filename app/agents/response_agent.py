@@ -23,15 +23,7 @@ class ResponseAgent(BaseAgent):
         Returns:
             Updated state with formatted response
         """
-        # If we already have a response, just add follow-up questions and return
-        if state.get("response"):
-            state["follow_up_questions"] = [
-                "What would you like to know?",
-                "How can I assist you today?",
-                "Is there something specific you'd like to ask?",
-                "Would you like to search for something?"
-            ]
-            return state
+       
             
         formatted_results = []
         search_results = state.get("search_results", [])
@@ -70,14 +62,7 @@ class ResponseAgent(BaseAgent):
                     f"   {text}\n"
                 )
         
-        # Add follow-up questions
-        state["follow_up_questions"] = [
-            "Can you provide more details about this?",
-            "Would you like to search for something else?",
-            "Is there anything specific you'd like to know more about?",
-            "Would you like me to refine the search?"
-        ]
-        
+      
         # Format the final response
         if formatted_results:
             state["response"] = "Here's what I found:\n\n" + "\n".join(formatted_results)

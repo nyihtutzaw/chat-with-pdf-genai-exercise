@@ -13,7 +13,9 @@ from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.runnables import RunnablePassthrough
 from langgraph.graph import Graph, END
 
-from app.agents.base import PDFQueryAgent, WebSearchAgent, ResponseAgent
+from app.agents.pdf_query_agent import PDFQueryAgent
+from app.agents.web_search_agent import WebSearchAgent
+from app.agents.response_agent import ResponseAgent
 from app.config.llm import LLMConfig
 
 # Configure logging
@@ -176,20 +178,6 @@ class AgentOrchestrator:
         return self._initialize_state(state)[0]  # Only return the state, not the tuple
     
     
-    def _handle_web_search_flag(self, state: Dict[str, Any], metadata: Dict[str, Any]) -> bool:
-        """Handle the force_web_search flag in metadata."""
-        if not metadata.get("force_web_search", False):
-            return False
-            
-        state["intent"] = "web"
-        state["metadata"]["intent_classification"] = {
-            "detected_intent": "web_search",
-            "confidence": 1.0,
-            "needs_clarification": False,
-            "source": "force_web_search_flag"
-        }
-        return True
-            
     def _create_intent_classifier(self):
         """Create the intent classification chain."""
         intent_prompt = """
@@ -412,42 +400,6 @@ class AgentOrchestrator:
                 state, 
                 query if 'query' in locals() else ""
             )
-    
-    async def _classify_intent(self, state: Dict[str, Any], query: str) -> None:
-        """Classify the intent of the user's query."""
-        try:
-            routing_decision = await self.router.route_query(query)
-            detected_intent = routing_decision.intent
-            
-            if detected_intent == IntentType.PDF_QUERY:
-                state["intent"] = "pdf"
-                state["metadata"].update({
-                    "original_query": query
-                })
-            else:  # Default to web search for other intents
-                state["intent"] = "web"
-            
-            # Store classification metadata
-            state["metadata"]["intent_classification"] = {
-                "detected_intent": detected_intent.value,
-                "confidence": getattr(routing_decision, 'confidence', 1.0),
-                "needs_clarification": getattr(routing_decision, 'needs_clarification', False),
-                "source": "llm_router"
-            }
-            
-        except Exception as e:  # pylint: disable=broad-except
-            logger.warning("Error in router: %s", str(e))
-            self._handle_classification_fallback(state)
-    
-    def _handle_classification_fallback(self, state: Dict[str, Any]) -> None:
-        """Handle fallback when intent classification fails."""
-        state["intent"] = "web"
-        state["metadata"]["intent_classification"] = {
-            "detected_intent": "web_search",
-            "confidence": 0.7,
-            "needs_clarification": False,
-            "source": "fallback"
-        }
     
     def _handle_classification_error(self, state: Dict[str, Any], query: str) -> Dict[str, Any]:
         """Handle errors during intent classification."""

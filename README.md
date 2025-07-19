@@ -81,3 +81,6 @@ docker-compose logs -f qdrant
 - [Response Agent](docs/RESPONSE_AGENT.md) - Formats and presents search results to users
 - [Web Search Agent](docs/WEB_SEARCH_AGENT.md) - Handles web search functionality
 - [PDF Query Agent](docs/PDF_QUERY_AGENT.md) - Processes and retrieves information from PDF documents
+
+### Project Analysis
+- [Limitations and Future Improvements](docs/limitations_and_improvements.md) - Current limitations and proposed enhancements for the system

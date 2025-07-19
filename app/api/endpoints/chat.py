@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, status
 from app.models.chat import ChatRequest, ChatResponse, ClearSessionResponse
 
 
-from app.core.vector_store import vector_store
+from app.services.vector_store import vector_store
 from app.agents.orchestrator import AgentOrchestrator
 from app.services.conversation.state import conversation_manager
 

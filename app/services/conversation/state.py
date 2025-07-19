@@ -32,7 +32,7 @@ class Conversation:
         self.created_at = datetime.now(timezone.utc)
         self.updated_at = self.created_at
         self.metadata: Dict = {}
-        self.follow_up_questions: List[str] = []
+      
         self.context = {
             'last_intent': None,
             'last_entities': {},
@@ -54,14 +54,7 @@ class Conversation:
             messages = messages[-limit:]
         return [msg.to_dict() for msg in messages]
         
-    def add_follow_up_questions(self, questions: List[str]) -> None:
-        """Add new follow-up questions to the conversation context."""
-        self.follow_up_questions = questions
-        self.updated_at = datetime.utcnow()
-        
-    def get_follow_up_questions(self) -> List[str]:
-        """Get current follow-up questions."""
-        return self.follow_up_questions
+    
         
     def update_context(self, intent: Optional[str] = None, 
                       entities: Optional[Dict] = None,

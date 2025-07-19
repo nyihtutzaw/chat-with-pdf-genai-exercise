@@ -19,7 +19,6 @@ class GraphState(TypedDict):
     input: str
     messages: Annotated[List[Dict], lambda x, y: x + y]
     response: Optional[str]
-    follow_up_questions: List[str]
 
 class ConversationGraph:
     """Manages conversation flow using LangGraph."""
@@ -73,70 +72,6 @@ class ConversationGraph:
         
         return {"response": response, "messages": [{"role": "assistant", "content": response}]}
     
-    async def generate_follow_ups(self, state: GraphState) -> Dict[str, any]:
-        """Generate follow-up questions based on conversation context."""
-        conversation = conversation_manager.get_conversation(state["session_id"])
-        
-        # Get conversation context
-        context = conversation.get_context()
-        last_intent = context.get('last_intent')
-        topics = context.get('conversation_topics', [])
-        
-        # Get recent messages for context
-        context_messages = conversation.get_messages(limit=5)
-        
-        # Create prompt for follow-up generation
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are an AI assistant helping with a conversation. 
-            Generate 2-3 relevant follow-up questions based on the conversation history.
-            Focus on the most recent topics and maintain context.
-            
-            Current conversation topics: {topics}
-            Last detected intent: {intent}"""),
-            ("human", """Conversation history (most recent first):
-            {conversation}
-            
-            Generate 2-3 specific follow-up questions that would help continue this conversation naturally.
-            Format each question on a new line.
-            Questions:""")
-        ])
-        
-        # Create the chain
-        chain = prompt | self.llm | StrOutputParser()
-        
-        try:
-            # Get follow-up questions
-            follow_ups = await chain.ainvoke({
-                "conversation": "\n".join(
-                    f"{msg['role']}: {msg['content']}" 
-                    for msg in reversed(context_messages)  # Show in chronological order
-                ),
-                "topics": ", ".join(topics[-3:]) if topics else "No specific topics yet",
-                "intent": last_intent or "Not specified"
-            })
-            
-            # Parse the response into a list of questions
-            questions = [
-                q.strip() 
-                for q in follow_ups.split("\n") 
-                if q.strip() and not q.strip().startswith(("1.", "2.", "3.", "-", "*"))
-            ][:3]  # Limit to 3 questions
-            
-            # Store follow-up questions in conversation state
-            conversation.add_follow_up_questions(questions)
-            
-            return {
-                "follow_up_questions": questions,
-                "metadata": {
-                    "intent": last_intent,
-                    "topics": topics[-3:]
-                }
-            }
-            
-        except Exception as e:
-            logger.error(f"Error generating follow-up questions: {str(e)}")
-            return {"follow_up_questions": []}
-    
     def update_conversation(self, state: GraphState) -> Dict:
         """Update the conversation with the response and follow-ups."""
         conversation = conversation_manager.get_conversation(state["session_id"])
@@ -153,13 +88,9 @@ class ConversationGraph:
                     topics=state.get("topics", [])
                 )
         
-        # Get current follow-up questions from conversation state
-        current_follow_ups = conversation.get_follow_up_questions()
-        
         # Return updated state with follow-up questions
         return {
             "messages": [],
-            "follow_up_questions": current_follow_ups,
             "metadata": {
                 "session_id": conversation.session_id,
                 "updated_at": conversation.updated_at.isoformat()

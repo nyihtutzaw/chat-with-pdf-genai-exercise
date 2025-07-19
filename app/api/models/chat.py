@@ -37,10 +37,7 @@ class ChatResponse(BaseModel):
         default_factory=list,
         description="List of clarification questions if needed"
     )
-    follow_up_questions: List[str] = Field(
-        default_factory=list,
-        description="Suggested follow-up questions"
-    )
+
     conversation_history: List[Dict[str, Any]] = Field(
         default_factory=list,
         description="The conversation history"

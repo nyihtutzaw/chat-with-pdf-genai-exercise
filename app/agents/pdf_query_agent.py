@@ -24,6 +24,10 @@ class PDFQueryAgent(BaseAgent):
         Returns:
             Updated state with search results
         """
+
+
+
+
         query = state.get("messages", [{}])[-1].get("content", "")
         search_results = self.vector_store.search_similar(
             query=query,

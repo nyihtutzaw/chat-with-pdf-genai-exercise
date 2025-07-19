@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import List, Dict, Optional
+from typing import List, Dict
 from concurrent.futures import ThreadPoolExecutor
 from ddgs import DDGS
 import requests
@@ -17,7 +17,7 @@ class WebSearchService:
         
         Args:
             query: The search query
-            region: Region code (e.g., 'wt-wt' for worldwide, 'us-en' for US English)
+            region: Region code (e.g., 'us-en' for US English)
             time_period: Time period for results (e.g., 'd' for day, 'w' for week, 'm' for month)
             
         Returns:
@@ -88,59 +88,5 @@ class WebSearchService:
             
         return []
         
-    @staticmethod
-    def _clean_query(query: str) -> str:
-        """Clean and enhance the search query."""
-        # Remove common non-essential words that might confuse the search
-        stop_words = {'what', 'who', 'where', 'when', 'why', 'how', 'do', 'does', 'is', 'are', 'the', 'a', 'an', 'and', 'or', 'in', 'on', 'at'}
-        cleaned = ' '.join([word for word in query.split() if word.lower() not in stop_words])
-        return cleaned.strip()
-        
-    def _is_high_quality_result(self, title: str, snippet: str) -> bool:
-        """Check if a search result is high quality and relevant."""
-        # Basic validation
-        if not title or not snippet:
-            return False
-            
-        # Simple length check
-        if len(title) < 5 or len(snippet) < 10:
-            return False
-            
-        return True
-    
-    @staticmethod
-    def _is_english(text: str, threshold: float = 0.8) -> bool:
-        """Check if text is primarily English."""
-        if not text.strip():
-            return False
-            
-        # Simple check for non-ASCII characters
-        try:
-            text.encode('ascii')
-            return True
-        except UnicodeEncodeError:
-            # Count English alphabet characters vs others
-            english_chars = sum(1 for c in text if 'a' <= c.lower() <= 'z' or c.isspace())
-            return (english_chars / len(text)) > threshold
-            
-    def _calculate_relevance(self, query: str, title: str, snippet: str) -> float:
-        """Calculate relevance score of a search result."""
-        if not query or not title or not snippet:
-            return 0.0
-            
-        # Simple keyword matching for now
-        query_terms = set(query.lower().split())
-        text = f"{title} {snippet}".lower()
-        
-        # Count matching terms
-        matches = sum(1 for term in query_terms if term in text)
-        
-        # Give more weight to title matches
-        title_matches = sum(1 for term in query_terms if term in title.lower())
-        
-        # Calculate score (0.0 to 1.0)
-        score = (matches * 0.3) + (title_matches * 0.7)
-        return min(1.0, score / len(query_terms) if query_terms else 0.0)
-
 # Create a singleton instance
 web_search_service = WebSearchService()

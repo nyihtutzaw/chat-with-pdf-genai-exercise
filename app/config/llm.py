@@ -47,7 +47,6 @@ class RouterResponse(BaseModel):
     message: str
     needs_clarification: bool = False
     clarification_questions: List[str] = Field(default_factory=list)
-    follow_up_questions: List[str] = Field(default_factory=list)
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 from app.config.config import settings

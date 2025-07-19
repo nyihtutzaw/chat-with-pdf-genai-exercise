@@ -10,7 +10,6 @@ from typing import Any, Callable, Awaitable, Dict, Tuple
 
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
-from langchain_core.runnables import RunnablePassthrough
 from langgraph.graph import Graph, END
 
 from app.agents.pdf_query_agent import PDFQueryAgent
@@ -171,7 +170,6 @@ class AgentOrchestrator:
         state.setdefault('intent', 'response')
         state.setdefault('needs_clarification', False)
         state.setdefault('clarification_questions', [])
-        state.setdefault('follow_up_questions', [])
         state.setdefault('search_results', [])
         
         # Initialize any additional state fields
@@ -181,20 +179,28 @@ class AgentOrchestrator:
     def _create_intent_classifier(self):
         """Create the intent classification chain."""
         intent_prompt = """
-        You are an intent classification system for a chat application that helps users with PDF documents.
+        You are an intent classification system for a chat application that helps users with PDF documents and general knowledge.
         
         Classify the following message into one of these intents:
         - greeting: For greetings like hello, hi, hey, good morning/afternoon/evening, what's up, etc.
-        - pdf_query: When asking about PDF document content
-        - web_search: For general knowledge questions not specific to PDFs
+        - pdf_query: For general knowledge questions related to academic papers
+        - web_search: For general knowledge questions
+        - follow_up: When the message is a follow-up question or reference to previous conversation
         - clarification_needed: When the intent is unclear
+        
+        Conversation History:
+        {conversation_history}
         
         Message to classify: {message}
         
+        If this is a follow-up question (e.g., using pronouns like 'he', 'she', 'it', 'they', or referring to something previously mentioned), 
+        classify it as 'follow_up' and include the context from the conversation that it refers to.
+        
         Respond with a JSON object containing:
-        - intent: The classified intent (greeting, pdf_query, web_search, or clarification_needed)
+        - intent: The classified intent (greeting, pdf_query, web_search, follow_up, or clarification_needed)
         - confidence: A number between 0 and 1 indicating your confidence
         - reasoning: A brief explanation of your classification
+        - context: If this is a follow-up, include the specific context from previous messages that this refers to
         """
         
         prompt = ChatPromptTemplate.from_messages([
@@ -202,13 +208,13 @@ class AgentOrchestrator:
             ("human", "{message}")
         ])
         
-        # Create a chain that takes a message and returns a classification
-        return (
-            {"message": RunnablePassthrough()}
-            | prompt
-            | self.llm_config.llm
-            | JsonOutputParser()
-        )
+        # Create a chain that properly formats the input with conversation history
+        chain = ({
+            "message": lambda x: x["message"],
+            "conversation_history": lambda x: x.get("conversation_history", "No previous conversation"),
+        } | prompt | self.llm_config.llm | JsonOutputParser())
+        
+        return chain
         
     def _detect_ambiguity(self, message: str) -> Tuple[bool, str, str]:
         """Check if the message is ambiguous using comprehensive patterns.
@@ -257,6 +263,7 @@ class AgentOrchestrator:
 
         return False, "", ""
 
+
     async def _classify_intent_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """Node function for intent classification using LLM.
         
@@ -267,13 +274,14 @@ class AgentOrchestrator:
            - greeting: Returns a greeting response
            - pdf_query: Routes to PDF query handler
            - web_search: Routes to web search
+           - follow_up: Handles follow-up questions using conversation context
            - clarification_needed: Asks for clarification
         """
         # Initialize state with required fields
         state = self._initialize_intent_state(state)
         
         try:
-            # Get the latest user message
+            # Get the conversation history and latest message
             messages = state.get("messages", [])
             if not messages:
                 raise ValueError("No messages in conversation")
@@ -281,22 +289,20 @@ class AgentOrchestrator:
             last_message = messages[-1]
             query = last_message.get("content", "").strip()
             metadata = last_message.get("metadata", {})
-
-            # 3. Check for ambiguous questions
-            is_ambiguous, clarification_msg, example = self._detect_ambiguity(query)
-            if is_ambiguous:
-                state["intent"] = "response"
-                state["response"] = f"{clarification_msg}\n\n{example}"
-                state["metadata"]["intent_classification"] = {
-                    "detected_intent": "clarification_needed",
-                    "confidence": 0.9,
-                    "needs_clarification": True,
-                    "is_ambiguous": True,
-                    "reasoning": "Question was detected as ambiguous",
-                    "source": "ambiguity_detector"
-                }
-                return state
             
+            # Prepare conversation history for context
+            conversation_history = "\n".join(
+                f"{msg.get('role', 'user')}: {msg.get('content', '')}" 
+                for msg in messages[:-1]  # Exclude the current message
+            )
+
+           
+
+
+               
+            
+           
+
             # 1. Check for force_web_search flag first - this takes highest priority
             if metadata.get("force_web_search", False):
                 state["intent"] = "web"
@@ -353,19 +359,50 @@ class AgentOrchestrator:
                 
             
             
-            # 3. Classify intent using the intent classifier
-            classification = await self.intent_classifier.ainvoke(query)
+            # 3. Classify intent using the intent classifier with conversation history
+
+         
+
+            classification = await self.intent_classifier.ainvoke({
+                "message": query,
+                "conversation_history": conversation_history
+            })
+
+     
             
             # Update state based on the classified intent
             intent = classification.get("intent", "pdf_query")
+    
+
             state["metadata"]["intent_classification"] = {
                 "detected_intent": intent,
                 "confidence": classification.get("confidence", 1.0),
                 "needs_clarification": intent == "clarification_needed",
                 "reasoning": classification.get("reasoning", ""),
-                "source": "llm_intent_classifier"
+                "source": "llm_intent_classifier",
+                "context": classification.get("context", "")
             }
+
+
+            if (intent != "follow_up"):
+             # 3. Check for ambiguous questions, but be very permissive with follow-ups
+                is_ambiguous, clarification_msg, example = self._detect_ambiguity(query)
+                if is_ambiguous:
+                    state["intent"] = "response"
+                    state["response"] = f"{clarification_msg}\n\n{example}"
+                    state["metadata"]["intent_classification"] = {
+                        "detected_intent": "clarification_needed",
+                        "confidence": 0.9,
+                        "needs_clarification": True,
+                        "is_ambiguous": True,
+                        "reasoning": "Question was detected as ambiguous",
+                        "source": "ambiguity_detector"
+                    }
+                    return state
             
+
+         
+     
           
             
             # Handle greeting intent
@@ -380,12 +417,36 @@ class AgentOrchestrator:
                 state["metadata"]["original_query"] = query
                 return state
                 
+            # Handle follow-up questions
+            if intent == "follow_up":
+
+                print("here it is ")
+
+                context = classification.get("context", "")
+                if context:
+                    # If we have context, use it to modify the query
+                    modified_query = f"{context} {query}"
+                    state["metadata"]["original_query"] = modified_query
+                    
+                    # For follow-ups about people, places, or things previously searched, default to web search
+                    if any(term in query.lower() for term in ["he", "she", "it", "they", "that", "this", "the"]):
+                        state["intent"] = "web"
+                        # Force web search to get fresh information
+                        state["metadata"]["force_web_search"] = True
+                        return state
+                    
+                    # For other follow-ups, check the context
+                    if any(term in context.lower() for term in ["search", "find", "look up"]):
+                        state["intent"] = "web"
+                    else:
+                        state["intent"] = "pdf"
+                    return state
+                
             # Default to web search for other intents
-            state["intent"] = "pdf"
+            state["intent"] = "web" if intent == "web_search" else "pdf"
             
             # Ensure all required fields are present
-            for field in ["needs_clarification", "clarification_questions", 
-                         "follow_up_questions", "search_results"]:
+            for field in ["needs_clarification", "clarification_questions", "search_results"]:
                 state.setdefault(field, [] if field.endswith('s') else False)
             
             return state
@@ -455,7 +516,7 @@ class AgentOrchestrator:
                 result.setdefault("intent", state.get("intent", "response"))
                 result.setdefault("needs_clarification", False)
                 result.setdefault("clarification_questions", [])
-                result.setdefault("follow_up_questions", [])
+           
                 result.setdefault("search_results", [])
                 
                 # For response agent, ensure we have a response field
@@ -514,7 +575,7 @@ class AgentOrchestrator:
             "intent": "response",
             "needs_clarification": False,
             "clarification_questions": [],
-            "follow_up_questions": [],
+       
             "search_results": [],
             "metadata": {
                 "session_id": session_id,
@@ -550,7 +611,7 @@ class AgentOrchestrator:
             # Ensure all required fields are present
             needs_clarification = bool(result.get("needs_clarification", False))
             clarification_questions = result.get("clarification_questions", [])
-            follow_up_questions = result.get("follow_up_questions", [])
+           
             
             # Get conversation history, ensuring it's a list of message dicts
             conversation_history = []
@@ -579,7 +640,7 @@ class AgentOrchestrator:
                 "search_results": search_results if isinstance(search_results, list) else [],
                 "needs_clarification": needs_clarification,
                 "clarification_questions": clarification_questions if isinstance(clarification_questions, list) else [],
-                "follow_up_questions": follow_up_questions if isinstance(follow_up_questions, list) else [],
+               
                 "conversation_history": conversation_history,
                 "metadata": metadata
             }
@@ -592,7 +653,7 @@ class AgentOrchestrator:
                 "search_results": [],
                 "needs_clarification": False,
                 "clarification_questions": [],
-                "follow_up_questions": [],
+               
                 "conversation_history": [],
                 "metadata": {
                     "error": str(e),

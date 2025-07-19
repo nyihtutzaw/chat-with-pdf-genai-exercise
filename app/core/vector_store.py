@@ -107,7 +107,7 @@ class VectorStore:
         name = re.sub(r'\s+', ' ', name).strip()
         return name
 
-    def search_similar(self, query: str, limit: int = 5, min_similarity: float = 0.3, filter_doc_names: List[str] = None) -> List[Dict[str, Any]]:
+    def search_similar(self, query: str, limit: int = 5, min_similarity: float = 0.5, filter_doc_names: List[str] = None) -> List[Dict[str, Any]]:
         """
         Search for similar documents to the query.
         
@@ -201,11 +201,11 @@ class VectorStore:
                 seen_texts.add(text)
             
             # If we still don't have enough results, try with a lower similarity threshold
-            if len(results) < limit and min_similarity > 0.3:
+            if len(results) < limit and min_similarity > 0.5:
                 additional_results = self.search_similar(
                     query=query,
                     limit=limit - len(results),
-                    min_similarity=0.3,  # Lower threshold
+                    min_similarity=0.5,  # Lower threshold
                     filter_doc_names=filter_doc_names
                 )
                 

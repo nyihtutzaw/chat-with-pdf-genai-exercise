@@ -2,7 +2,7 @@ import asyncio
 import logging
 from typing import List, Dict, Optional
 from concurrent.futures import ThreadPoolExecutor
-from duckduckgo_search import DDGS
+from ddgs import DDGS
 import requests
 
 logger = logging.getLogger(__name__)

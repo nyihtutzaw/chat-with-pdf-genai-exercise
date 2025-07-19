@@ -85,22 +85,19 @@ class AgentOrchestrator:
             
         def route_after_pdf(state: Dict[str, Any]) -> str:
             # If we have search results, go to response
-            if state.get("search_results"):
+            search_results = state.get("search_results", [])
+            if search_results:
                 return "response"
                 
-            # If we should try web search after PDF, go to web search
-            if state.get("metadata", {}).get("should_try_web_after_pdf", False):
-                # Update the message to indicate we're falling back to web search
-                if state.get("messages"):
-                    query = state["messages"][-1].get("content", "")
-                    state["messages"][-1]["content"] = (
-                        f"I couldn't find any relevant information in the PDFs. "
-                        f"Searching the web for: {query}"
-                    )
-                return "web_search"
-                
-            # Otherwise, go to response with no results
-            return "response"
+            state["intent"] = "web"
+            state["metadata"]["intent_classification"] = {
+                "detected_intent": "web_search",
+                "confidence": 0.8,
+                "needs_clarification": False,
+                "source": "pdf_search_fallback"
+            }
+            
+            return "web_search"
         
         # Add edges from classify_intent to the appropriate nodes
         workflow.add_conditional_edges(
@@ -151,26 +148,6 @@ class AgentOrchestrator:
             return True
         return False
     
-    def _handle_pdf_fallback(self, state: Dict[str, Any]) -> bool:
-        """Handle PDF fallback to web search and return True if handled."""
-        if state.get("previous_intent") == "pdf" and not state.get("search_results"):
-            # Check if we should try web search after PDF search
-            if state.get("metadata", {}).get("should_try_web_after_pdf", False):
-                state["intent"] = "web"
-                state["metadata"]["intent_classification"] = {
-                    "detected_intent": "web_search",
-                    "confidence": 0.9,
-                    "needs_clarification": False,
-                    "source": "pdf_search_fallback"
-                }
-                state["response"] = "This information isn't available in the PDFs. Let me search the web for you."
-                return True
-            # If we were supposed to find something in PDFs but didn't
-            elif not state.get("metadata", {}).get("force_web_search", False):
-                state["response"] = "I couldn't find any relevant information in the PDFs. " \
-                                  "If you'd like me to search the web, please enable web search."
-                return True
-        return False
     
     def _apply_keyword_fallback(self, state: Dict[str, Any], query: str) -> None:
         """Apply keyword-based intent classification as a fallback."""
@@ -333,8 +310,15 @@ class AgentOrchestrator:
             query = last_message.get("content", "").strip()
             metadata = last_message.get("metadata", {})
             
-            # 1. Check for force_web_search flag first
-            if self._handle_web_search_flag(state, metadata):
+            # 1. Check for force_web_search flag first - this takes highest priority
+            if metadata.get("force_web_search", False):
+                state["intent"] = "web"
+                state["metadata"]["intent_classification"] = {
+                    "detected_intent": "web_search",
+                    "confidence": 1.0,
+                    "needs_clarification": False,
+                    "source": "force_web_search_flag"
+                }
                 return state
             
             # 2. Check for ambiguous questions
@@ -364,8 +348,8 @@ class AgentOrchestrator:
                 "reasoning": classification.get("reasoning", ""),
                 "source": "llm_intent_classifier"
             }
-
-       
+            
+          
             
             # Handle greeting intent
             if intent == "greeting":
@@ -376,7 +360,6 @@ class AgentOrchestrator:
             # Handle PDF query intent
             if intent == "pdf_query":
                 state["intent"] = "pdf"
-                state["metadata"]["should_try_web_after_pdf"] = True
                 state["metadata"]["original_query"] = query
                 return state
                 
@@ -410,7 +393,6 @@ class AgentOrchestrator:
             if detected_intent == IntentType.PDF_QUERY:
                 state["intent"] = "pdf"
                 state["metadata"].update({
-                    "should_try_web_after_pdf": True,
                     "original_query": query
                 })
             else:  # Default to web search for other intents

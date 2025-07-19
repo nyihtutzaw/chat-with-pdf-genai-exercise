@@ -23,7 +23,23 @@ class PDFQueryAgent(BaseAgent):
         self.vector_store = vector_store
     
     async def process(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """Process PDF query."""
+        """Process PDF query.
+        
+        If no results are found and should_try_web_after_pdf is True, 
+        the state will be updated to trigger a web search.
+        """
+        # Check if we should force web search
+        metadata = state.get("messages", [{}])[-1].get("metadata", {})
+        if metadata.get("force_web_search", False):
+            state["intent"] = "web"
+            state["metadata"]["intent_classification"] = {
+                "detected_intent": "web_search",
+                "confidence": 1.0,
+                "needs_clarification": False,
+                "source": "force_web_search_flag"
+            }
+            return state
+            
         query = state.get("messages", [{}])[-1].get("content", "")
         search_results = self.vector_store.search_similar(
             query=query,
@@ -31,13 +47,19 @@ class PDFQueryAgent(BaseAgent):
             min_similarity=0.5
         )
 
-        print("search_results")
-        print(search_results)
-
-
-
         state["search_results"] = search_results
         state["current_agent"] = self.name
+        
+        # If no results and we should try web search, update the intent
+        if not search_results and state.get("metadata", {}).get("should_try_web_after_pdf", False):
+            state["intent"] = "web"
+            state["metadata"]["intent_classification"] = {
+                "detected_intent": "web_search",
+                "confidence": 0.8,
+                "needs_clarification": False,
+                "source": "pdf_search_fallback"
+            }
+            
         return state
 
 class WebSearchAgent(BaseAgent):
@@ -49,6 +71,9 @@ class WebSearchAgent(BaseAgent):
     async def process(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """Process web search query."""
         query = state.get("messages", [{}])[-1].get("content", "")
+
+        print("web_search_agent query",query)
+
         search_results = await web_search_service.search(query)
         
         state["search_results"] = search_results

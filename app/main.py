@@ -23,7 +23,7 @@ app = FastAPI(
 # Setup CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # For development only, restrict in production
+    allow_origins=["*"],  
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -46,12 +46,7 @@ app.include_router(
 # Health check endpoint
 @app.get(f"{settings.API_V1_STR}/health", summary="Health Check", tags=["Monitoring"])
 async def health_check():
-    """
-    Check the health status of the API.
-    
-    Returns:
-        dict: Status information including version and debug mode.
-    """
+
     return {
         "status": "healthy",
         "version": settings.VERSION,
@@ -65,12 +60,6 @@ async def health_check():
     tags=["Root"]
 )
 async def root():
-    """
-    Root endpoint that provides basic API information.
-    
-    Returns:
-        dict: Welcome message and API information.
-    """
     return {
         "message": f"Welcome to {settings.PROJECT_NAME}",
         "version": settings.VERSION,

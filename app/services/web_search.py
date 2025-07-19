@@ -12,17 +12,7 @@ class WebSearchService:
         self.max_results = max_results
 
     async def search(self, query: str, region: str = 'us-en', time_period: str = None) -> List[Dict[str, str]]:
-        """
-        Perform an asynchronous web search using DuckDuckGo.
-        
-        Args:
-            query: The search query
-            region: Region code (e.g., 'us-en' for US English)
-            time_period: Time period for results (e.g., 'd' for day, 'w' for week, 'm' for month)
-            
-        Returns:
-            List of search results with title, link, and snippet
-        """
+     
         loop = asyncio.get_running_loop()
         with ThreadPoolExecutor() as pool:
             return await loop.run_in_executor(
@@ -31,17 +21,7 @@ class WebSearchService:
             )
             
     def _sync_search(self, query: str, region: str = 'us-en', time_period: str = None) -> List[Dict[str, str]]:
-        """
-        Perform a web search using DuckDuckGo.
-        
-        Args:
-            query: The search query
-            region: Region code (e.g., 'us-en' for US English)
-            time_period: Time period for results (e.g., 'd' for day, 'w' for week, 'm' for month)
-            
-        Returns:
-            List of search results with title, link, and snippet
-        """
+      
         try:
             logger.info("Performing web search for: %s", query)
             
@@ -88,5 +68,5 @@ class WebSearchService:
             
         return []
         
-# Create a singleton instance
+
 web_search_service = WebSearchService()

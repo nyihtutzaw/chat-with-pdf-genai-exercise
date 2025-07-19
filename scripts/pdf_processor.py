@@ -36,27 +36,22 @@ class PDFProcessor:
             raise
     
     def _create_chunk(self, chunks: List[str], current_chunk: List[str]) -> None:
-        """Helper method to create a chunk from current sentences."""
         if current_chunk:
             chunks.append(' '.join(current_chunk))
     
     def _should_finalize_chunk(self, current_length: int, sentence: str) -> bool:
-        """Determine if we should finalize the current chunk."""
         return current_length + len(sentence) > self.chunk_size and current_length > 0
     
     def _prepare_next_chunk(self, current_chunk: List[str]) -> Tuple[List[str], int]:
-        """Prepare overlap for the next chunk."""
         overlap = max(0, len(current_chunk) - self.chunk_overlap)
         next_chunk = current_chunk[-overlap:] if overlap > 0 else []
         next_length = sum(len(s) + 1 for s in next_chunk)
         return next_chunk, next_length
     
     def _chunk_text(self, text: str) -> List[str]:
-        """Split text into overlapping chunks of specified size."""
         if not text.strip():
             return []
         
-        # Split into sentences first for better chunking
         sentences = [s.strip() for s in re.split(r'(?<=[.!?]) +', text) if s.strip()]
         if not sentences:
             return []
@@ -82,18 +77,6 @@ class PDFProcessor:
         return chunks
     
     def process_pdf(self, pdf_path: Path) -> List[Dict[str, Any]]:
-        """Process a PDF file and return chunks with metadata.
-        
-        Args:
-            pdf_path: Path to the PDF file to process
-            
-        Returns:
-            List of dictionaries containing chunk text and metadata
-            
-        Raises:
-            FileNotFoundError: If the PDF file doesn't exist
-            Exception: If there's an error processing the PDF
-        """
         if not pdf_path.exists():
             raise FileNotFoundError(f"PDF file not found: {pdf_path}")
             
@@ -126,17 +109,6 @@ class PDFProcessor:
             raise
     
     def process_directory(self, pdf_dir: Path) -> Generator[Dict[str, Any], None, None]:
-        """Process all PDFs in a directory and yield chunks with metadata.
-        
-        Args:
-            pdf_dir: Directory containing PDF files to process
-            
-        Yields:
-            Dictionaries containing chunk text and metadata
-            
-        Raises:
-            FileNotFoundError: If the directory doesn't exist
-        """
         if not pdf_dir.exists():
             raise FileNotFoundError(f"Directory not found: {pdf_dir}")
             

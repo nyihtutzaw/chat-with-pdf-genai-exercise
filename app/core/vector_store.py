@@ -12,10 +12,9 @@ from app.config.config import settings
 logger = logging.getLogger(__name__)
 
 class VectorStore:
-    """Handles document embeddings and vector storage using Qdrant."""
     
     def __init__(self):
-        """Initialize the vector store with Qdrant client and embedding model."""
+        
         self.client = QdrantClient(url=settings.QDRANT_URL, timeout=60.0)
         self.collection_name = settings.QDRANT_COLLECTION
         self.embedding_model = SentenceTransformer(settings.EMBEDDING_MODEL)
@@ -37,7 +36,7 @@ class VectorStore:
             logger.info(f"Created collection: {self.collection_name}")
     
     def generate_embeddings(self, texts: List[str]) -> List[List[float]]:
-        """Generate embeddings for a list of text chunks."""
+        
         if not texts:
             return []
             
@@ -53,11 +52,9 @@ class VectorStore:
             raise
     
     def store_documents(self, documents: List[Dict[str, Any]]) -> int:
-        """Store document chunks in the vector store with embeddings."""
         if not documents:
             return 0
         
-        # Prepare data for batch upload
         points = []
         texts = [doc['text'] for doc in documents]
         embeddings = self.generate_embeddings(texts)
@@ -77,7 +74,6 @@ class VectorStore:
                 )
             )
         
-        # Upload in batches to handle large datasets
         batch_size = 100
         total_stored = 0
         
@@ -108,18 +104,7 @@ class VectorStore:
         return name
 
     def search_similar(self, query: str, limit: int = 5, min_similarity: float = 0.5, filter_doc_names: List[str] = None) -> List[Dict[str, Any]]:
-        """
-        Search for similar documents to the query.
-        
-        Args:
-            query: The search query
-            limit: Maximum number of results to return
-            min_similarity: Minimum similarity score (0-1) for results to be considered relevant
-            filter_doc_names: Optional list of document names to filter results by
-            
-        Returns:
-            List of relevant documents with their scores and metadata
-        """
+       
         try:
             # Generate embedding for the query first
             query_embedding = self.embedding_model.encode(
@@ -177,9 +162,8 @@ class VectorStore:
                     score_threshold=min_similarity
                 )
             
-            # Format and filter results
             results = []
-            seen_texts = set()  # To avoid duplicate content
+            seen_texts = set()  
             
             for hit in search_results:
                 if len(results) >= limit:
@@ -200,12 +184,11 @@ class VectorStore:
                 })
                 seen_texts.add(text)
             
-            # If we still don't have enough results, try with a lower similarity threshold
             if len(results) < limit and min_similarity > 0.5:
                 additional_results = self.search_similar(
                     query=query,
                     limit=limit - len(results),
-                    min_similarity=0.5,  # Lower threshold
+                    min_similarity=0.5, 
                     filter_doc_names=filter_doc_names
                 )
                 
@@ -221,7 +204,6 @@ class VectorStore:
             
         except Exception as e:
             logger.error(f"Error searching documents: {str(e)}", exc_info=True)
-            # Try a fallback search with minimal configuration
             try:
                 search_results = self.client.search(
                     collection_name=self.collection_name,
@@ -258,5 +240,4 @@ class VectorStore:
             logger.error(f"Error deleting collection '{self.collection_name}': {str(e)}")
             raise
 
-# Create a global instance of the VectorStore
 vector_store = VectorStore()

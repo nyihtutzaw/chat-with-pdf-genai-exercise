@@ -1,9 +1,4 @@
-"""Orchestrator for multi-agent workflow.
 
-This module implements a LangGraph-based orchestrator that coordinates multiple agents
-to process user queries based on their intent. The workflow includes intent classification,
-document querying, web search, and response generation.
-"""
 import logging
 import re
 from typing import Any, Callable, Awaitable, Dict, Tuple
@@ -24,10 +19,10 @@ logger = logging.getLogger(__name__)
 AgentNodeFunc = Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]]
 
 class AgentOrchestrator:
-    """Orchestrates the multi-agent workflow."""
+   
     
     def __init__(self, vector_store):
-        """Initialize with required agents and workflow."""
+        
         self.vector_store = vector_store
         self.agents = {
             "pdf_query": PDFQueryAgent(vector_store),
@@ -40,37 +35,23 @@ class AgentOrchestrator:
         self.workflow = self._create_workflow()
     
     def _create_workflow(self) -> Graph:
-        """Create and compile the LangGraph workflow.
-        
-        The workflow consists of the following nodes:
-        - classify_intent: Determines the intent of the user's message
-        - pdf_query: Handles PDF document queries
-        - web_search: Handles web search queries
-        - response: Formats and returns the final response
-        
-        Returns:
-            A compiled LangGraph workflow
-        """
+       
+       
         workflow = Graph()
         
-        # Add nodes
         workflow.add_node("classify_intent", self._classify_intent_node)
         workflow.add_node("pdf_query", self._create_agent_node("pdf_query"))
         workflow.add_node("web_search", self._create_agent_node("web_search"))
         workflow.add_node("response", self._create_agent_node("response"))
         
-        # Define routing function that returns the next node based on intent
         def route_after_classify(state: Dict[str, Any]) -> str:
-            # If we already have a response (e.g., from greeting), go to response node
             if state.get("response"):
                 return "response"
                 
             intent = state.get("intent", "response")
             metadata = state.get("metadata", {})
             
-            # Handle follow-up intents - use the same agent as the previous response
             if intent == "follow_up":
-                # Look for the last non-follow-up agent used
                 conversation_history = state.get("conversation_history", [])
                 for msg in reversed(conversation_history):
                     if msg.get("role") == "assistant" and "agent_used" in msg.get("metadata", {}):
@@ -78,21 +59,19 @@ class AgentOrchestrator:
                         if agent_used in ["web_search_agent", "pdf_query_agent"]:
                             return agent_used.replace("_agent", "")
             
-            # If force_web_search is True, go directly to web search
             if metadata.get("force_web_search", False):
                 return "web_search"
 
 
-            # Route based on intent
+            
             if intent == "pdf":
                 return "pdf_query"
             elif intent == "web":
                 return "web_search"
                 
-            return "response"  # Default to response node
+            return "response"  
             
         def route_after_pdf(state: Dict[str, Any]) -> str:
-            # If we have search results, go to response
             search_results = state.get("search_results", [])
             if search_results:
                 return "response"
@@ -107,36 +86,33 @@ class AgentOrchestrator:
             
             return "web_search"
         
-        # Add edges from classify_intent to the appropriate nodes
         workflow.add_conditional_edges(
             "classify_intent",
             route_after_classify
         )
         
-        # Add conditional edge after PDF query to handle fallback to web search
         workflow.add_conditional_edges(
             "pdf_query",
             route_after_pdf
         )
         
-        # Add edges from agent nodes to the response node
+       
         workflow.add_edge("web_search", "response")
         workflow.add_edge("response", END)
         
-        # Set the entry point
+        
         workflow.set_entry_point("classify_intent")
         
-        # Compile the workflow
+        
         return workflow.compile()
     
     def _initialize_state(self, state: Dict[str, Any]) -> tuple:
-        """Initialize and extract necessary values from the state."""
+        
         messages = state.get("messages", [{}])
         last_message = messages[-1] if messages else {}
         query = last_message.get("content", "")
         metadata = last_message.get("metadata", {})
         
-        # Initialize default values
         state.setdefault("intent", "response")
         state.setdefault("metadata", {})
         state["metadata"].setdefault("intent_classification", {})
@@ -145,7 +121,7 @@ class AgentOrchestrator:
     
     
     def _apply_keyword_fallback(self, state: Dict[str, Any], query: str) -> None:
-        """Apply keyword-based intent classification as a fallback."""
+        
         query_lower = query.lower()
         if any(keyword in query_lower for keyword in ["search", "find", "look up"]):
             state["intent"] = "web"
@@ -155,7 +131,7 @@ class AgentOrchestrator:
             state["intent"] = "response"
     
     def _ensure_dict_state(self, state: Any) -> Dict[str, Any]:
-        """Ensure the state is a dictionary and return a mutable copy."""
+        
         if isinstance(state, dict):
             return dict(state)
             
@@ -169,25 +145,23 @@ class AgentOrchestrator:
             return {'_state': state}
 
     def _initialize_intent_state(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """Initialize the state dictionary with required fields."""
+        
         state = self._ensure_dict_state(state)
         
-        # Ensure metadata exists and is mutable
         state['metadata'] = self._ensure_dict_state(state.get('metadata', {}))
         
-        # Initialize required state fields if they don't exist
         state.setdefault('messages', [])
         state.setdefault('intent', 'response')
         state.setdefault('needs_clarification', False)
         state.setdefault('clarification_questions', [])
         state.setdefault('search_results', [])
         
-        # Initialize any additional state fields
-        return self._initialize_state(state)[0]  # Only return the state, not the tuple
+        
+        return self._initialize_state(state)[0]  
     
     
     def _create_intent_classifier(self):
-        """Create the intent classification chain."""
+        
         intent_prompt = """
         You are an intent classification system for a chat application that helps users with PDF documents and general knowledge.
         
@@ -218,7 +192,6 @@ class AgentOrchestrator:
             ("human", "{message}")
         ])
         
-        # Create a chain that properly formats the input with conversation history
         chain = ({
             "message": lambda x: x["message"],
             "conversation_history": lambda x: x.get("conversation_history", "No previous conversation"),
@@ -227,33 +200,19 @@ class AgentOrchestrator:
         return chain
         
     def _detect_ambiguity(self, message: str, is_follow_up: bool = False) -> Tuple[bool, str, str]:
-        """Check if the message is ambiguous using comprehensive patterns.
-        
-        Args:
-            message: The message to check for ambiguity
-            is_follow_up: Whether this is a follow-up question in a conversation
-            
-        Returns:
-            tuple[bool, str, str]: A tuple containing:
-                - bool: True if the message is ambiguous, False otherwise
-                - str: The clarification message to show to the user
-                - str: An example of how to rephrase the question
-        """
-        # Skip ambiguity check for follow-up questions as they often reference previous context
+       
         if is_follow_up:
             return False, "", ""
             
-        # Check for short or incomplete messages first
         message_lower = message.lower()
         if len(message.strip().split()) <= 3 and not any(p in message_lower for p in ['hi', 'hello', 'hey']):
             return True, "Your question seems a bit brief. Could you provide more details?", \
                    "For example, instead of 'How to?', try 'How do I implement a neural network in PyTorch for image classification?'"
         
-        # Less strict patterns that won't trigger ambiguity for common follow-up questions
         ambiguity_patterns = [
             # Very vague questions
             {
-                'pattern': r'^\s*(what|how|when|where|who|why|which|can you|could you|would you|is there|are there|does anyone|do you know|i need help|help me|explain|tell me about|what is|what are|what do|what does|how do|how does|how can|how to|how much|how many|what is the|what are the|what was|what were|what will|what would|what should|what could|what can|what might|what may|what if|what about|what else|what other|what kind of|what type of|what sort of|what time|what day|what year|what month|what date|what color|what size|what shape|what brand|what make|what model|what version|what language|what country|what city|what state|what province|what region|what area|what part|what section|what chapter|what page|what line|what word|what letter|what number|what amount|what quantity|what price|what cost|what value|what percentage|what percent|what ratio|what fraction|what decimal|what degree|what temperature|what speed|what distance|what length|what width|what height|what depth|what weight|what mass|what volume|what capacity|what duration|what period|what frequency|what interval|what rate|what speed|what direction|what position|what location|what address|what coordinates|what phone number|what email|what website|what url|what link|what reference|what source|what citation|what author|what title|what name|what term|what phrase|what expression|what sentence|what paragraph|what passage|what quote|what saying|what proverb|what idiom|what slang|what jargon|what acronym|what abbreviation|what initialism|what symbol|what character|what digit|what figure|what diagram|what chart|what graph|what table|what list|what item|what element|what component|what part|what piece|what section|what segment|what portion|what fraction|what percentage|what ratio|what proportion|what amount|what quantity|what number|what count|what total|what sum|what average|what mean|what median|what mode|what range|what spread|what deviation|what variance|what standard deviation|what error|what margin|what limit|what bound|what constraint|what restriction|what requirement|what condition|what criteria|what standard|what benchmark|what metric|what measure|what indicator|what signal|what sign|what symptom|what evidence|what proof|what verification|what validation|what confirmation|what certification|what approval|what authorization|what permission|what consent|what agreement|what contract|what deal|what arrangement|what plan|what schedule|what timeline|what deadline|what due date|what target|what goal|what objective|what aim|what purpose|what intention|what motive|what reason|what cause|what factor|what element|what component|what part|what piece|what section|what segment|what portion|what fraction|what percentage|what ratio|what proportion|what amount|what quantity|what number|what count|what total|what sum|what average|what mean|what median|what mode|what range|what spread|what deviation|what variance|what standard deviation|what error|what margin|what limit|what bound|what constraint|what restriction|what requirement|what condition|what criteria|what standard|what benchmark|what metric|what measure|what indicator|what signal|what sign|what symptom|what evidence|what proof|what verification|what validation|what confirmation|what certification|what approval|what authorization|what permission|what consent|what agreement|what contract|what deal|what arrangement|what plan|what schedule|what timeline|what deadline|what due date|what target|what goal|what objective|what aim|what purpose|what intention|what motive|what reason|what cause|what factor|what element|what component|what part|what piece|what section|what segment|what portion|what fraction|what percentage|what ratio|what proportion|what amount|what quantity|what number|what count|what total|what sum|what average|what mean|what median|what mode|what range|what spread|what deviation|what variance|what standard deviation|what error|what margin|what limit|what bound|what constraint|what restriction|what requirement|what condition|what criteria|what standard|what benchmark|what metric|what measure|what indicator|what signal|what sign|what symptom|what evidence|what proof|what verification|what validation|what confirmation|what certification|what approval|what authorization|what permission|what consent|what agreement|what contract|what deal|what arrangement|what plan|what schedule|what timeline|what deadline|what due date|what target|what goal|what objective|what aim|what purpose|what intention|what motive|what reason|what cause|what factor)\s*\??\s*$',
+                'pattern': r'^\s*(what|how|when|where|who|why|which|can you|could you|would you|is there|are there|does anyone|do you know|i need help|help me|explain|tell me about|what is|what are|what do|what does|how do|how does|how can|how to|how much|how many|what is the|what are the|what was|what were|what will|what would|what should|what could|what can|what might|what may|what if|what about|what else|what other|what kind of|what type of|what sort of|what time|what day|what year|what month|what date|what color|what size|what shape|what brand|what make|what model|what version|what language|what country|what city|what state|what province|what region|what area|what part|what section|what chapter|what page|what line|what word|what letter|what number|what amount|what quantity|what price|what cost|what value|what percentage|what percent|what ratio|what fraction|what decimal|what degree|what temperature|what speed|what distance|what length|what width|what height|what depth|what weight|what mass|what volume|what capacity|what duration|what period|what frequency|what interval|what rate|what speed|what direction|what position|what location|what address|what coordinates|what phone number|what email|what website|what url|what link|what reference|what source|what citation|what author|what title|what name|what term|what phrase|what expression|what sentence|what paragraph|what passage|what quote|what saying|what proverb|what idiom|what slang|what jargon|what acronym|what abbreviation|what initialism|what symbol|what character|what digit|what figure|what diagram|what chart|what graph|what table|what list|what item|what element|what component|what part|what piece|what section|what segment|what portion|what fraction|what percentage|what ratio|what proportion|what amount|what quantity|what number|what count|what total|what sum|what average|what mean|what median|what mode|what range|what spread|what deviation|what variance|what standard deviation|what error|what margin|what limit|what bound|what constraint|what restriction|what requirement|what condition|what criteria|what standard|what benchmark|what metric|what measure|what indicator|what signal|what sign|what symptom|what evidence|what proof|what verification|what validation|what confirmation|what certification|what approval|what authorization|what permission|what consent|what agreement|what contract|what deal|what arrangement|what plan|what schedule|what timeline|what deadline|what due date|what target|what goal|what objective|what aim|what purpose|what intention|what motive|what reason|what cause|what factor|what element|what component|what part|what piece|what section|what segment|what portion|what fraction|what percentage|what ratio|what proportion|what amount|what quantity|what number|what count|what total|what sum|what average|what mean|what median|what mode|what range|what spread|what deviation|what variance|what standard deviation|what error|what margin|what limit|what bound|what constraint|what restriction|what requirement|what condition|what criteria|what standard|what benchmark|what metric|what measure|what indicator|what signal|what sign|what symptom|what evidence|what proof|what verification|what validation|what confirmation|what certification|what approval|what authorization|what permission|what consent|what agreement|what contract|what deal|what arrangement|what plan|what schedule|what timeline|what deadline|what due date|what target|what goal|what objective|what aim|what purpose|what intention|what motive|what reason|what cause|what factor)\s*\??\s*$',
                 'clarification': "I'd be happy to help! Could you be more specific about what you'd like to know?",
                 'example': "For example, instead of 'Tell me about transformers', try 'What are the key components of the transformer architecture in NLP?'"
             },
@@ -297,11 +256,11 @@ class AgentOrchestrator:
            - follow_up: Handles follow-up questions using conversation context
            - clarification_needed: Asks for clarification
         """
-        # Initialize state with required fields
+      
         state = self._initialize_intent_state(state)
         
         try:
-            # Get the conversation history and latest message
+          
             messages = state.get("messages", [])
             if not messages:
                 raise ValueError("No messages in conversation")
@@ -310,7 +269,7 @@ class AgentOrchestrator:
             query = last_message.get("content", "").strip()
             metadata = last_message.get("metadata", {})
             
-            # Prepare conversation history for context
+            
             conversation_history = "\n".join(
                 f"{msg.get('role', 'user')}: {msg.get('content', '')}" 
                 for msg in messages[:-1]  # Exclude the current message
@@ -323,7 +282,7 @@ class AgentOrchestrator:
             
            
 
-            # 1. Check for force_web_search flag first - this takes highest priority
+          
             if metadata.get("force_web_search", False):
                 state["intent"] = "web"
                 state["metadata"]["intent_classification"] = {
@@ -334,9 +293,9 @@ class AgentOrchestrator:
                 }
                 return state
             
-            # 2. Use LLM to detect if the query is requesting a web search
+            
             try:
-                # Create a prompt to detect web search intent
+                
                 web_search_prompt = f"""
                 Determine if the following user query is requesting to search the web for information.
                 A query is considered a web search request if it explicitly asks to search, look up, 
@@ -350,10 +309,10 @@ class AgentOrchestrator:
                 - reasoning: brief explanation of the decision
                 """
                 
-                # Call the LLM to analyze the query
+                
                 response = await self.llm_config.llm.ainvoke(web_search_prompt)
                 
-                # Parse the response
+                
                 try:
                     import json
                     result = json.loads(response.content)
@@ -371,39 +330,34 @@ class AgentOrchestrator:
                         
                 except (json.JSONDecodeError, KeyError) as e:
                     logger.warning(f"Failed to parse LLM response for web search detection: {e}")
-                    # Continue with normal flow if parsing fails
                     
             except Exception as e:
                 logger.error(f"Error during web search detection: {e}", exc_info=True)
-                # Continue with normal flow if there's an error
                 
             
             
-            # 3. First check if this is a follow-up question
+            
             is_follow_up = False
             context = ""
             
-            # Check conversation history for context
+            
             if len(conversation_history) > 0:
-                # Look for recent web search or PDF query results that this might be following up on
+                
                 last_agent_response = next((msg for msg in reversed(messages[:-1]) 
                                          if msg.get("role") == "assistant"), None)
                 
                 if last_agent_response and "search_results" in last_agent_response.get("metadata", {}):
-                    # If the last response had search results, this is likely a follow-up
+                    
                     is_follow_up = True
-                    context = last_agent_response.get("content", "")[:200]  # Get first 200 chars for context
+                    context = last_agent_response.get("content", "")[:200]  
             
-            # 4. Classify intent using the intent classifier with conversation history
             classification = await self.intent_classifier.ainvoke({
                 "message": query,
                 "conversation_history": conversation_history
             })
             
-            # Update state based on the classified intent
             intent = classification.get("intent", "pdf_query")
             
-            # If we detected a follow-up from context, override the intent
             if is_follow_up and intent != "follow_up":
                 intent = "follow_up"
                 classification["intent"] = "follow_up"
@@ -421,10 +375,9 @@ class AgentOrchestrator:
                 "is_follow_up": is_follow_up
             }
 
-            # Skip ambiguity check for follow-ups and greetings
             if intent not in ["follow_up", "greeting"]:
                 is_ambiguous, clarification_msg, example = self._detect_ambiguity(query, is_follow_up=is_follow_up)
-                if is_ambiguous and not is_follow_up:  # Don't mark follow-ups as ambiguous
+                if is_ambiguous and not is_follow_up:  
                     state["intent"] = "response"
                     state["response"] = f"{clarification_msg}\n\n{example}"
                     state["metadata"]["intent_classification"] = {
@@ -441,36 +394,31 @@ class AgentOrchestrator:
          
           
             
-            # Handle greeting intent
             if intent == "greeting":
                 state["intent"] = "response"
                 state["response"] = "Hello! How can I assist you today?"
                 return state
                 
-            # Handle PDF query intent
             if intent == "pdf_query":
                 state["intent"] = "pdf"
                 state["metadata"]["original_query"] = query
                 return state
                 
-            # Handle follow-up questions
+            
             if intent == "follow_up":
 
           
 
                 context = classification.get("context", "")
                 if context:
-                    # If we have context, use it to modify the query
                     modified_query = f"{context} {query}"
                     state["metadata"]["original_query"] = modified_query
                     state["intent"] = "pdf"
                     state["metadata"]["context"] = context
                     return state
                 
-            # Default to web search for other intents
             state["intent"] = "web" if intent == "web_search" else "pdf"
             
-            # Ensure all required fields are present
             for field in ["needs_clarification", "clarification_questions", "search_results"]:
                 state.setdefault(field, [] if field.endswith('s') else False)
             
@@ -495,7 +443,6 @@ class AgentOrchestrator:
             "I'm having trouble understanding your request. Could you please rephrase?"
         ]
         
-        # Apply keyword fallback if possible
         if query:
             self._apply_keyword_fallback(state, query)
             
@@ -503,47 +450,29 @@ class AgentOrchestrator:
     
  
     def _create_agent_node(self, agent_name: str):
-        """Create a node function for the given agent.
-        
-        This factory function creates an async node function that:
-        1. Processes the state using the specified agent
-        2. Ensures all required fields are present in the result
-        3. Handles errors gracefully
-        
-        Args:
-            agent_name: The name of the agent to create a node for
-            
-        Returns:
-            An async function that processes the state using the specified agent
-        """
+       
         async def node_func(state: Dict[str, Any]) -> Dict[str, Any]:
-            # Ensure we have a copy of the state to modify
             result = dict(state)
             
             try:
-                # Process the state with the appropriate agent
                 logger.info("Processing with agent: %s", agent_name)
                 agent_result = await self.agents[agent_name].process(state)
                 
-                # Update the result with the agent's output
                 if isinstance(agent_result, dict):
                     result.update(agent_result)
                 
-                # Ensure metadata exists and track which agent processed this
                 result.setdefault("metadata", {})
                 result["metadata"].update({
                     "processed_by": agent_name,
                     "processing_steps": result["metadata"].get("processing_steps", []) + [agent_name]
                 })
                 
-                # Ensure all required fields are present
                 result.setdefault("intent", state.get("intent", "response"))
                 result.setdefault("needs_clarification", False)
                 result.setdefault("clarification_questions", [])
            
                 result.setdefault("search_results", [])
                 
-                # For response agent, ensure we have a response field
                 if agent_name == "response" and "response" not in result:
                     result["response"] = "I've processed your request."
                 
@@ -552,7 +481,6 @@ class AgentOrchestrator:
             except Exception as e:  # pylint: disable=broad-except
                 logger.error("Error in agent node %s: %s", agent_name, str(e), exc_info=True)
                 
-                # Return a safe response with error information
                 result.update({
                     "response": f"An error occurred while processing your request with {agent_name}.",
                     "metadata": {
@@ -572,26 +500,6 @@ class AgentOrchestrator:
     
     async def process_message(self, message: str, session_id: str, force_web_search: bool = False) -> Dict[str, Any]:
        
-    
-        
-        """Process a user message through the agent workflow.
-        
-        This method:
-        1. Initializes the conversation state
-        2. Runs the workflow with the user's message
-        3. Processes the result to ensure all required fields are present
-        4. Returns a properly formatted response
-        
-        Args:
-            message: The user's message
-            session_id: The conversation session ID
-            force_web_search: If True, forces a web search regardless of message content
-            
-        Returns:
-            A dictionary containing the response data with all required fields for ChatResponse
-        """
-        # Initialize the state with user message and default values
-
        
         state = {
             "messages": [{"role": "user", "content": message, "metadata": {}}],
@@ -609,35 +517,28 @@ class AgentOrchestrator:
         }
         
         
-        # Run the workflow
         try:
             logger.info(f"Processing message with workflow: {message[:100]}...")
             result = await self.workflow.ainvoke(state)
             
-            # Ensure we have a valid response
             response = result.get("response", "I'm not sure how to respond to that.")
             if not response:
                 response = "I don't have a response for that. Could you please rephrase?"
             
-            # Format search results if available
             search_results = result.get("search_results", [])
             if search_results and isinstance(search_results, list) and len(search_results) > 0:
                 if not response or response == "I'm not sure how to respond to that.":
                     response = "Here's what I found:"
             
-            # Normalize intent
             intent = result.get("intent", "response")
             if intent == "pdf":
                 intent = "pdf_query"
             elif intent == "web":
                 intent = "web_search"
             
-            # Ensure all required fields are present
-            needs_clarification = bool(result.get("needs_clarification", False))
             clarification_questions = result.get("clarification_questions", [])
            
             
-            # Get conversation history, ensuring it's a list of message dicts
             conversation_history = []
             if "messages" in result and isinstance(result["messages"], list):
                 conversation_history = [
@@ -645,7 +546,6 @@ class AgentOrchestrator:
                     if isinstance(msg, dict) and "role" in msg and "content" in msg
                 ]
             
-            # Prepare metadata
             metadata = {
                 "agent_used": result.get("current_agent", "unknown"),
                 "session_id": session_id,
@@ -654,7 +554,7 @@ class AgentOrchestrator:
                 **result.get("metadata", {})
             }
             
-            # Log successful processing
+           
             logger.info(f"Successfully processed message with intent: {intent}")
             
             return {

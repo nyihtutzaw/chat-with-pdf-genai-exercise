@@ -6,11 +6,11 @@ from app.models.ingestion import Ingestion, IngestionStatus
 from app.schemas.ingestion import IngestionCreate, IngestionUpdate
 
 def get_ingestion(db: Session, ingestion_id: int) -> Optional[Ingestion]:
-    """Get an ingestion by ID."""
+   
     return db.query(Ingestion).filter(Ingestion.id == ingestion_id).first()
 
 def get_ingestion_by_filepath(db: Session, file_path: str) -> Optional[Ingestion]:
-    """Get an ingestion by file path."""
+   
     return db.query(Ingestion).filter(Ingestion.file_path == file_path).order_by(Ingestion.created_at.desc()).first()
 
 def get_ingestions(
@@ -19,14 +19,14 @@ def get_ingestions(
     limit: int = 100,
     status: Optional[IngestionStatus] = None
 ) -> List[Ingestion]:
-    """Get a list of ingestions, optionally filtered by status."""
+   
     query = db.query(Ingestion)
     if status is not None:
         query = query.filter(Ingestion.status == status)
     return query.offset(skip).limit(limit).all()
 
 def create_ingestion(db: Session, ingestion: IngestionCreate) -> Ingestion:
-    """Create a new ingestion record."""
+   
     db_ingestion = Ingestion(**ingestion.dict())
     db.add(db_ingestion)
     db.commit()
@@ -38,7 +38,7 @@ def update_ingestion(
     db_ingestion: Ingestion, 
     ingestion_update: IngestionUpdate
 ) -> Ingestion:
-    """Update an existing ingestion record."""
+   
     update_data = ingestion_update.dict(exclude_unset=True)
     for field, value in update_data.items():
         setattr(db_ingestion, field, value)
@@ -56,7 +56,7 @@ def update_ingestion_status(
     total_documents: Optional[int] = None,
     processed_documents: Optional[int] = None,
 ) -> Optional[Ingestion]:
-    """Update the status of an ingestion."""
+   
     db_ingestion = get_ingestion(db, ingestion_id)
     if not db_ingestion:
         return None
@@ -82,7 +82,7 @@ def update_ingestion_status(
     return db_ingestion
 
 def delete_ingestion(db: Session, ingestion_id: int) -> bool:
-    """Delete an ingestion record."""
+   
     db_ingestion = get_ingestion(db, ingestion_id)
     if not db_ingestion:
         return False

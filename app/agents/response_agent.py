@@ -62,10 +62,16 @@ class ResponseAgent(BaseAgent):
                     f"   {text}\n"
                 )
         
+        
       
-        # Format the final response
+       
+        
         if formatted_results:
             state["response"] = "Here's what I found:\n\n" + "\n".join(formatted_results)
+        
+        # Format the final response
+        if state.get("response"):
+            return state
         else:
             state["response"] = (
                 "I couldn't find any relevant information. "

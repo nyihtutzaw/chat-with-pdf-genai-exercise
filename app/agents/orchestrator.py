@@ -61,11 +61,15 @@ class AgentOrchestrator:
         
         # Define routing function that returns the next node based on intent
         def route_after_classify(state: Dict[str, Any]) -> str:
+
+            
             # If we already have a response (e.g., from greeting), go to response node
             if state.get("response"):
                 return "response"
                 
             intent = state.get("intent", "response")
+
+            
 
             # If force_web_search is True, go directly to web search
             metadata = state.get("metadata", {})
@@ -271,7 +275,7 @@ class AgentOrchestrator:
         1. If force_web_search is True, goes to web search
         2. Otherwise, checks for ambiguous questions
         3. Uses LLM to classify the intent
-           - greeting: Returns a greeting response
+           - greeting: Returns a greeting response such as the message is hi, how are you, good moring, etc
            - pdf_query: Routes to PDF query handler
            - web_search: Routes to web search
            - follow_up: Handles follow-up questions using conversation context
@@ -367,11 +371,13 @@ class AgentOrchestrator:
                 "message": query,
                 "conversation_history": conversation_history
             })
+            
 
      
             
             # Update state based on the classified intent
             intent = classification.get("intent", "pdf_query")
+
     
 
             state["metadata"]["intent_classification"] = {
@@ -402,7 +408,6 @@ class AgentOrchestrator:
             
 
          
-     
           
             
             # Handle greeting intent
@@ -465,8 +470,7 @@ class AgentOrchestrator:
             
         return state
     
-    # Removed _route_by_intent - replaced with inline route_after_classify function in _create_workflow
-    
+ 
     def _create_agent_node(self, agent_name: str):
         """Create a node function for the given agent.
         
@@ -627,7 +631,6 @@ class AgentOrchestrator:
                 "message": response,
                 "session_id": session_id,
                 "search_results": search_results if isinstance(search_results, list) else [],
-                "needs_clarification": needs_clarification,
                 "clarification_questions": clarification_questions if isinstance(clarification_questions, list) else [],
                
                 "conversation_history": conversation_history,
@@ -640,7 +643,7 @@ class AgentOrchestrator:
                 "message": "I encountered an error processing your request. Please try again.",
                 "session_id": session_id,
                 "search_results": [],
-                "needs_clarification": False,
+            
                 "clarification_questions": [],
                
                 "conversation_history": [],

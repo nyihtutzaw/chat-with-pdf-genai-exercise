@@ -89,7 +89,6 @@ def _create_error_response(request_id: str, chat_request: ChatRequest, error: st
         "intent": "error",
         "message": "I encountered an error processing your request. Please try again.",
         "session_id": chat_request.session_id,
-        "needs_clarification": False,
         "clarification_questions": [],
        
         "metadata": {
@@ -171,8 +170,6 @@ async def _process_chat_request(chat_request: ChatRequest) -> Dict[str, Any]:
             "intent": intent,
             "message": response_message,
             "session_id": chat_request.session_id,
-            "needs_clarification": bool(result.get("needs_clarification", False)),
-            "clarification_questions": result.get("clarification_questions") or [],
             "search_results": result.get("search_results") or [],
             "conversation_history": conversation_history,
             "metadata": {

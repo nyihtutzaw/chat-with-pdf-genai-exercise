@@ -12,7 +12,7 @@ from tqdm import tqdm
 sys.path.append(str(Path(__file__).parent.parent))
 
 from scripts.pdf_processor import PDFProcessor
-from app.core.vector_store import VectorStore
+from app.services.vector_store import VectorStore
 from app.config.config import settings
 from app.utils.ingestion_tracker import IngestionTracker
 

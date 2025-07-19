@@ -5,8 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.db.base import get_db
 from app.crud import crud_ingestion
-from app.models.ingestion import IngestionStatus
-from app.schemas.ingestion import IngestionCreate, IngestionUpdate
+from app.models.ingestion import IngestionStatus,IngestionCreate, IngestionUpdate
 
 class IngestionTracker:
    

@@ -6,6 +6,70 @@ This document outlines the high-level flow of agent orchestration in the Chat wi
 
 The Agent Orchestrator serves as the central nervous system of the application, managing the flow of information between specialized agents. It follows a structured workflow to ensure efficient processing of user queries while maintaining conversation context.
 
+```mermaid
+flowchart TD
+    A[User Query] --> B[AgentOrchestrator]
+    B --> C{Intent Analysis}
+    
+    %% Main paths
+    C -->|PDF Query| D[PDF Query Agent]
+    C -->|Web Search| E[Web Search Agent]
+    C -->|Follow-up| F[Context Analysis]
+    
+    %% Data sources
+    D --> G[Vector Store]
+    E --> H[Search API]
+    
+    %% Follow-up handling
+    F -->|Needs Context| I[Check Conversation History]
+    I -->|Found Context| J[Enhance Query with Context]
+    J --> D
+    I -->|No Context| K[Ask for Clarification]
+    K --> L[Response Agent]
+    
+    %% Response handling
+    G --> M[Response Agent]
+    H --> M
+    
+    M --> N[Formatted Response]
+    N --> O[User]
+    
+    %% Subgraphs for better organization
+    subgraph "Agent Orchestration"
+        B
+        C
+        D
+        E
+        F
+        I
+        J
+        K
+        M
+    end
+    
+    subgraph "Data Sources"
+        G
+        H
+    end
+    
+    subgraph "Conversation Context"
+        I
+        J
+        K
+    end
+    
+    %% Styling
+    style A fill:#e1f5fe,stroke:#01579b
+    style O fill:#e8f5e9,stroke:#2e7d32
+    style D fill:#fff3e0,stroke:#e65100
+    style E fill:#f3e5f5,stroke:#6a1b9a
+    style F fill:#fff9c4,stroke:#f9a825
+    style M fill:#f1f8e9,stroke:#689f38
+    style I fill:#e8f5e9,stroke:#2e7d32,stroke-dasharray: 5 5
+    style J fill:#e8f5e9,stroke:#2e7d32,stroke-dasharray: 5 5
+    style K fill:#ffebee,stroke:#c62828
+```
+
 ## Core Components
 
 ### 1. AgentOrchestrator

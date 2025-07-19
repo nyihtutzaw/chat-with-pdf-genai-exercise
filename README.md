@@ -71,6 +71,6 @@ docker-compose logs -f qdrant
 
 ## Documentation
 
-For a detailed [high-level overview of the system architecture and components](ARCHITECTURE_OVERVIEW.md), please see the architecture documentation.
-
-For information about the automated PDF ingestion process, see [Data Ingestion Documentation](DATA_INGESTION.md).
+- [System Architecture Overview](docs/ARCHITECTURE_OVERVIEW.md) - High-level overview of system components and technologies
+- [Agent Orchestration](docs/AGENT_ORCHESTRATION.md) - How agents work together to process queries
+- [Data Ingestion](docs/DATA_INGESTION.md) - Details on how documents are processed and indexed

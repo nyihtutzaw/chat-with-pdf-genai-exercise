@@ -400,7 +400,7 @@ class AgentOrchestrator:
                 state, 
                 query if 'query' in locals() else ""
             )
-    
+            
     def _handle_classification_error(self, state: Dict[str, Any], query: str) -> Dict[str, Any]:
         """Handle errors during intent classification."""
         state["intent"] = "response"

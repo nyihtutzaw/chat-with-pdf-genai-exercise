@@ -14,25 +14,26 @@ flowchart TD
     %% Main paths
     C -->|PDF Query| D[PDF Query Agent]
     C -->|Web Search| E[Web Search Agent]
-    C -->|Follow-up| F[Context Analysis]
-    
-    %% Data sources
-    D --> G[Vector Store]
-    E --> H[Search API]
+    C -->|Greeting| F[Generate Greeting]
+    C -->|Follow-up| G[Follow-up Detection]
     
     %% Follow-up handling
-    F -->|Needs Context| I[Check Conversation History]
-    I -->|Found Context| J[Enhance Query with Context]
-    J --> D
-    I -->|No Context| K[Ask for Clarification]
-    K --> L[Response Agent]
+    G -->|Previous Agent| H[Previous Agent]
+    G -->|No Context| I[Ask for Clarification]
+    H --> J[Response Agent]
+    
+    %% Data sources
+    D --> K[Vector Store]
+    E --> L[Search API]
     
     %% Response handling
-    G --> M[Response Agent]
-    H --> M
+    K --> M[Response Agent]
+    L --> M
+    F --> M
     
     M --> N[Formatted Response]
     N --> O[User]
+    I --> O
     
     %% Subgraphs for better organization
     subgraph "Agent Orchestration"
@@ -41,21 +42,24 @@ flowchart TD
         D
         E
         F
+        G
+        H
         I
-        J
-        K
         M
     end
     
     subgraph "Data Sources"
-        G
-        H
+        K
+        L
     end
     
-    subgraph "Conversation Context"
-        I
-        J
-        K
+    subgraph "Intent Analysis"
+        direction TB
+        C1[LLM-based Classification] --> C2{Follow-up?}
+        C2 -->|Yes| C3[Check Conversation History]
+        C3 --> C4[Extract Context]
+        C4 --> C5[Route to Previous Agent]
+        C2 -->|No| C6[Standard Classification]
     end
     
     %% Styling
@@ -63,11 +67,15 @@ flowchart TD
     style O fill:#e8f5e9,stroke:#2e7d32
     style D fill:#fff3e0,stroke:#e65100
     style E fill:#f3e5f5,stroke:#6a1b9a
-    style F fill:#fff9c4,stroke:#f9a825
+    style F fill:#e8f5e9,stroke:#2e7d32
+    style G fill:#fff9c4,stroke:#f9a825
+    style H fill:#e3f2fd,stroke:#1565c0
+    style I fill:#ffebee,stroke:#c62828
     style M fill:#f1f8e9,stroke:#689f38
-    style I fill:#e8f5e9,stroke:#2e7d32,stroke-dasharray: 5 5
-    style J fill:#e8f5e9,stroke:#2e7d32,stroke-dasharray: 5 5
-    style K fill:#ffebee,stroke:#c62828
+    
+    %% Style for Intent Analysis subgraph
+    classDef intentBox fill:#f5f5f5,stroke:#9e9e9e,stroke-width:1px,stroke-dasharray: 3 3
+    class C1,C2,C3,C4,C5,C6 intentBox
 ```
 
 ## Core Components
@@ -129,9 +137,11 @@ flowchart TD
 ## Special Flows
 
 ### Follow-up Questions
-1. Detects follow-up context from conversation history
-2. Retrieves relevant context from previous interactions
-3. Routes to appropriate agent with enriched context
+1. **Detection**: Uses LLM-based analysis to identify follow-up questions by examining conversation history
+2. **Context Analysis**: Extracts relevant context from previous interactions
+3. **Routing**: Routes to the same agent that handled the original query
+4. **Ambiguity Handling**: Skips ambiguity checks for follow-up questions to maintain context
+5. **Response Generation**: Maintains conversation flow by referencing previous context in responses
 
 ### Multi-Agent Collaboration
 1. Identifies queries requiring multiple agents

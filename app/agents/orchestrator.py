@@ -293,19 +293,8 @@ class AgentOrchestrator:
             last_message = messages[-1]
             query = last_message.get("content", "").strip()
             metadata = last_message.get("metadata", {})
-            
-            # 1. Check for force_web_search flag first - this takes highest priority
-            if metadata.get("force_web_search", False):
-                state["intent"] = "web"
-                state["metadata"]["intent_classification"] = {
-                    "detected_intent": "web_search",
-                    "confidence": 1.0,
-                    "needs_clarification": False,
-                    "source": "force_web_search_flag"
-                }
-                return state
-            
-            # 2. Check for ambiguous questions
+
+            # 3. Check for ambiguous questions
             is_ambiguous, clarification_msg, example = self._detect_ambiguity(query)
             if is_ambiguous:
                 state["intent"] = "response"
@@ -319,6 +308,62 @@ class AgentOrchestrator:
                     "source": "ambiguity_detector"
                 }
                 return state
+            
+            # 1. Check for force_web_search flag first - this takes highest priority
+            if metadata.get("force_web_search", False):
+                state["intent"] = "web"
+                state["metadata"]["intent_classification"] = {
+                    "detected_intent": "web_search",
+                    "confidence": 1.0,
+                    "needs_clarification": False,
+                    "source": "force_web_search_flag"
+                }
+                return state
+            
+            # 2. Use LLM to detect if the query is requesting a web search
+            try:
+                # Create a prompt to detect web search intent
+                web_search_prompt = f"""
+                Determine if the following user query is requesting to search the web for information.
+                A query is considered a web search request if it explicitly asks to search, look up, 
+                or find information online, on the internet, or using a search engine.
+                
+                Query: "{query}"
+                
+                Respond with a JSON object containing:
+                - is_web_search: boolean indicating if this is a web search request
+                - confidence: float between 0 and 1 indicating confidence
+                - reasoning: brief explanation of the decision
+                """
+                
+                # Call the LLM to analyze the query
+                response = await self.llm_config.llm.ainvoke(web_search_prompt)
+                
+                # Parse the response
+                try:
+                    import json
+                    result = json.loads(response.content)
+                    
+                    if result.get('is_web_search', False):
+                        state["intent"] = "web"
+                        state["metadata"]["intent_classification"] = {
+                            "detected_intent": "web_search",
+                            "confidence": min(float(result.get('confidence', 0.8)), 1.0),
+                            "needs_clarification": False,
+                            "source": "llm_web_search_detection",
+                            "reasoning": result.get('reasoning', 'Detected as web search request by LLM')
+                        }
+                        return state
+                        
+                except (json.JSONDecodeError, KeyError) as e:
+                    logger.warning(f"Failed to parse LLM response for web search detection: {e}")
+                    # Continue with normal flow if parsing fails
+                    
+            except Exception as e:
+                logger.error(f"Error during web search detection: {e}", exc_info=True)
+                # Continue with normal flow if there's an error
+                
+            
             
             # 3. Classify intent using the intent classifier
             classification = await self.intent_classifier.ainvoke(query)

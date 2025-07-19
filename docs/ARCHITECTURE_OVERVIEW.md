@@ -6,6 +6,7 @@
 - **Backend Framework**: FastAPI (Python 3.10+)
 - **Vector Database**: Qdrant with cosine similarity search
 - **Embedding Model**: SentenceTransformers (all-MiniLM-L6-v2)
+- **Web Search**: DuckDuckGo Search API
 - **PDF Processing**: PyPDF2 for text extraction
 - **Text Processing**: Regular expressions for text cleaning
 - **Containerization**: Docker, Docker Compose
@@ -24,8 +25,12 @@ The system follows a multi-agent architecture with the following components:
 
 ### Agent Types
 
-- **PDF Query Agent**: Handles document-related queries
-- **Web Search Agent**: Manages web search functionality
+- **PDF Query Agent**: Handles document-related queries using vector similarity search
+- **Web Search Agent**: Manages web search functionality using DuckDuckGo API
+  - Performs region-specific searches
+  - Filters results by time period
+  - Applies safe search filtering
+  - Removes duplicate results
 - **Response Agent**: Formats and presents final responses
 
 ### Workflow
@@ -75,16 +80,15 @@ The system classifies user intents into the following categories:
 
 ### Functionality
 
-- Performs asynchronous web searches
+- Performs asynchronous web searches using DuckDuckGo API
 - Retrieves and processes search results
 - Handles rate limiting and errors
 - Returns structured data for responses
 
 ### Implementation
 
-- **Search Integration**: Direct Qdrant vector search
-- **Result Processing**: Cosine similarity scoring
-- **Metadata Extraction**: PDF metadata and page numbers
+- **Search Integration**: Direct DuckDuckGo API calls
+- **Result Processing**: Result filtering and ranking
 - **Performance**: Asynchronous processing
 
 ## PDF Query Agent

@@ -13,9 +13,8 @@ class ResponseAgent(BaseAgent):
     async def process(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """Format the final response.
         
-        If the state already contains a response (e.g., from greeting in orchestrator),
-        it will be returned as is. Otherwise, formats search results from either
-        web search or PDF query.
+        Handles different types of responses including search results, follow-up questions,
+        and error states. Maintains context from previous interactions.
         
         Args:
             state: Current conversation state
@@ -23,7 +22,22 @@ class ResponseAgent(BaseAgent):
         Returns:
             Updated state with formatted response
         """
-       
+        # Check for existing response (e.g., from greeting in orchestrator)
+        if "response" in state and state["response"]:
+            return state
+            
+        # Get metadata and intent information
+        metadata = state.get("metadata", {})
+        intent_classification = metadata.get("intent_classification", {})
+        is_follow_up = intent_classification.get("is_follow_up", False)
+        
+        # Handle follow-up questions
+        if is_follow_up and not state.get("search_results"):
+            state["response"] = (
+                "I'm having trouble finding more information about that. "
+                "Could you rephrase your question or provide more context?"
+            )
+            return state
             
         formatted_results = []
         search_results = state.get("search_results", [])
@@ -36,7 +50,8 @@ class ResponseAgent(BaseAgent):
                 snippet = result.get("snippet", "No description available").strip()
                 link = result.get("link", "#")
                 
-                # Truncate long snippets
+                # Clean and format the snippet
+                snippet = self._clean_snippet(snippet)
                 if len(snippet) > 200:
                     snippet = snippet[:200] + "..."
                     
@@ -53,7 +68,8 @@ class ResponseAgent(BaseAgent):
                 source = result.get("metadata", {}).get("source", "Document")
                 page = result.get("metadata", {}).get("page", "")
                 
-                # Truncate long text
+                # Clean and format the text
+                text = self._clean_snippet(text)
                 if len(text) > 200:
                     text = text[:200] + "..."
                     
@@ -62,16 +78,12 @@ class ResponseAgent(BaseAgent):
                     f"   {text}\n"
                 )
         
-        
-      
-       
-        
-        if formatted_results:
-            state["response"] = "Here's what I found:\n\n" + "\n".join(formatted_results)
-        
         # Format the final response
-        if state.get("response"):
-            return state
+        if formatted_results:
+            if is_follow_up:
+                state["response"] = "Here's what I found about that:\n\n" + "\n".join(formatted_results)
+            else:
+                state["response"] = "Here's what I found:\n\n" + "\n".join(formatted_results)
         else:
             state["response"] = (
                 "I couldn't find any relevant information. "
@@ -84,3 +96,12 @@ class ResponseAgent(BaseAgent):
             ]
         
         return state
+        
+    def _clean_snippet(self, text: str) -> str:
+        """Clean up text snippets by removing extra whitespace and newlines."""
+        if not text:
+            return ""
+        # Replace multiple whitespace with single space and strip
+        import re
+        text = re.sub(r'\s+', ' ', text).strip()
+        return text

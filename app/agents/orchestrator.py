@@ -61,18 +61,24 @@ class AgentOrchestrator:
         
         # Define routing function that returns the next node based on intent
         def route_after_classify(state: Dict[str, Any]) -> str:
-
-            
             # If we already have a response (e.g., from greeting), go to response node
             if state.get("response"):
                 return "response"
                 
             intent = state.get("intent", "response")
-
-            
-
-            # If force_web_search is True, go directly to web search
             metadata = state.get("metadata", {})
+            
+            # Handle follow-up intents - use the same agent as the previous response
+            if intent == "follow_up":
+                # Look for the last non-follow-up agent used
+                conversation_history = state.get("conversation_history", [])
+                for msg in reversed(conversation_history):
+                    if msg.get("role") == "assistant" and "agent_used" in msg.get("metadata", {}):
+                        agent_used = msg["metadata"]["agent_used"]
+                        if agent_used in ["web_search_agent", "pdf_query_agent"]:
+                            return agent_used.replace("_agent", "")
+            
+            # If force_web_search is True, go directly to web search
             if metadata.get("force_web_search", False):
                 return "web_search"
 
@@ -220,21 +226,37 @@ class AgentOrchestrator:
         
         return chain
         
-    def _detect_ambiguity(self, message: str) -> Tuple[bool, str, str]:
+    def _detect_ambiguity(self, message: str, is_follow_up: bool = False) -> Tuple[bool, str, str]:
         """Check if the message is ambiguous using comprehensive patterns.
         
+        Args:
+            message: The message to check for ambiguity
+            is_follow_up: Whether this is a follow-up question in a conversation
+            
         Returns:
             tuple[bool, str, str]: A tuple containing:
                 - bool: True if the message is ambiguous, False otherwise
                 - str: The clarification message to show to the user
                 - str: An example of how to rephrase the question
         """
+        # Skip ambiguity check for follow-up questions as they often reference previous context
+        if is_follow_up:
+            return False, "", ""
+            
         # Check for short or incomplete messages first
-        if len(message.strip().split()) <= 3 and not any(p in message.lower() for p in ['hi', 'hello', 'hey']):
+        message_lower = message.lower()
+        if len(message.strip().split()) <= 3 and not any(p in message_lower for p in ['hi', 'hello', 'hey']):
             return True, "Your question seems a bit brief. Could you provide more details?", \
                    "For example, instead of 'How to?', try 'How do I implement a neural network in PyTorch for image classification?'"
         
+        # Less strict patterns that won't trigger ambiguity for common follow-up questions
         ambiguity_patterns = [
+            # Very vague questions
+            {
+                'pattern': r'^\s*(what|how|when|where|who|why|which|can you|could you|would you|is there|are there|does anyone|do you know|i need help|help me|explain|tell me about|what is|what are|what do|what does|how do|how does|how can|how to|how much|how many|what is the|what are the|what was|what were|what will|what would|what should|what could|what can|what might|what may|what if|what about|what else|what other|what kind of|what type of|what sort of|what time|what day|what year|what month|what date|what color|what size|what shape|what brand|what make|what model|what version|what language|what country|what city|what state|what province|what region|what area|what part|what section|what chapter|what page|what line|what word|what letter|what number|what amount|what quantity|what price|what cost|what value|what percentage|what percent|what ratio|what fraction|what decimal|what degree|what temperature|what speed|what distance|what length|what width|what height|what depth|what weight|what mass|what volume|what capacity|what duration|what period|what frequency|what interval|what rate|what speed|what direction|what position|what location|what address|what coordinates|what phone number|what email|what website|what url|what link|what reference|what source|what citation|what author|what title|what name|what term|what phrase|what expression|what sentence|what paragraph|what passage|what quote|what saying|what proverb|what idiom|what slang|what jargon|what acronym|what abbreviation|what initialism|what symbol|what character|what digit|what figure|what diagram|what chart|what graph|what table|what list|what item|what element|what component|what part|what piece|what section|what segment|what portion|what fraction|what percentage|what ratio|what proportion|what amount|what quantity|what number|what count|what total|what sum|what average|what mean|what median|what mode|what range|what spread|what deviation|what variance|what standard deviation|what error|what margin|what limit|what bound|what constraint|what restriction|what requirement|what condition|what criteria|what standard|what benchmark|what metric|what measure|what indicator|what signal|what sign|what symptom|what evidence|what proof|what verification|what validation|what confirmation|what certification|what approval|what authorization|what permission|what consent|what agreement|what contract|what deal|what arrangement|what plan|what schedule|what timeline|what deadline|what due date|what target|what goal|what objective|what aim|what purpose|what intention|what motive|what reason|what cause|what factor|what element|what component|what part|what piece|what section|what segment|what portion|what fraction|what percentage|what ratio|what proportion|what amount|what quantity|what number|what count|what total|what sum|what average|what mean|what median|what mode|what range|what spread|what deviation|what variance|what standard deviation|what error|what margin|what limit|what bound|what constraint|what restriction|what requirement|what condition|what criteria|what standard|what benchmark|what metric|what measure|what indicator|what signal|what sign|what symptom|what evidence|what proof|what verification|what validation|what confirmation|what certification|what approval|what authorization|what permission|what consent|what agreement|what contract|what deal|what arrangement|what plan|what schedule|what timeline|what deadline|what due date|what target|what goal|what objective|what aim|what purpose|what intention|what motive|what reason|what cause|what factor|what element|what component|what part|what piece|what section|what segment|what portion|what fraction|what percentage|what ratio|what proportion|what amount|what quantity|what number|what count|what total|what sum|what average|what mean|what median|what mode|what range|what spread|what deviation|what variance|what standard deviation|what error|what margin|what limit|what bound|what constraint|what restriction|what requirement|what condition|what criteria|what standard|what benchmark|what metric|what measure|what indicator|what signal|what sign|what symptom|what evidence|what proof|what verification|what validation|what confirmation|what certification|what approval|what authorization|what permission|what consent|what agreement|what contract|what deal|what arrangement|what plan|what schedule|what timeline|what deadline|what due date|what target|what goal|what objective|what aim|what purpose|what intention|what motive|what reason|what cause|what factor)\s*\??\s*$',
+                'clarification': "I'd be happy to help! Could you be more specific about what you'd like to know?",
+                'example': "For example, instead of 'Tell me about transformers', try 'What are the key components of the transformer architecture in NLP?'"
+            },
             # Vague quantity questions
             {
                 'pattern': r'\b(how many|how much|what (?:is|are) (?:the )?(?:number|amount|quantity))\b.*\b(enough|sufficient|good|required|necessary|adequate|appropriate|suitable|decent|reasonable|acceptable|satisfactory|optimal|ideal|recommended|suggested)\b',
@@ -249,15 +271,9 @@ class AgentOrchestrator:
             },
             # Vague comparison questions
             {
-                'pattern': r'\b(which|what) (is|are) (better)\b',
+                'pattern': r'\b(which|what) (is|are) (better|best|worse|worst)\b',
                 'clarification': "To help you compare effectively, could you explain what you mean by 'better' in this context?",
                 'example': "For example, instead of 'Which model is better?', try 'Which model has higher F1 score on small text classification tasks with limited training data?'"
-            },
-            # Vague requests for information
-            {
-                'pattern': r'\b(tell me about|what (?:is|are)|explain|describe|how (?:do|does)|what (?:do|does)|what (?:is|are) (?:the|a|an)|can you (?:tell|explain|describe))\b',
-                'clarification': "I'd be happy to help! Could you be more specific about what you'd like to know?",
-                'example': "For example, instead of 'Tell me about transformers', try 'What are the key components of the transformer architecture in NLP?'"
             }
         ]
 
@@ -363,22 +379,37 @@ class AgentOrchestrator:
                 
             
             
-            # 3. Classify intent using the intent classifier with conversation history
-
-         
-
+            # 3. First check if this is a follow-up question
+            is_follow_up = False
+            context = ""
+            
+            # Check conversation history for context
+            if len(conversation_history) > 0:
+                # Look for recent web search or PDF query results that this might be following up on
+                last_agent_response = next((msg for msg in reversed(messages[:-1]) 
+                                         if msg.get("role") == "assistant"), None)
+                
+                if last_agent_response and "search_results" in last_agent_response.get("metadata", {}):
+                    # If the last response had search results, this is likely a follow-up
+                    is_follow_up = True
+                    context = last_agent_response.get("content", "")[:200]  # Get first 200 chars for context
+            
+            # 4. Classify intent using the intent classifier with conversation history
             classification = await self.intent_classifier.ainvoke({
                 "message": query,
                 "conversation_history": conversation_history
             })
             
-
-     
-            
             # Update state based on the classified intent
             intent = classification.get("intent", "pdf_query")
-
-    
+            
+            # If we detected a follow-up from context, override the intent
+            if is_follow_up and intent != "follow_up":
+                intent = "follow_up"
+                classification["intent"] = "follow_up"
+                classification["reasoning"] = "Detected as follow-up based on conversation context"
+                if context:
+                    classification["context"] = context
 
             state["metadata"]["intent_classification"] = {
                 "detected_intent": intent,
@@ -386,14 +417,14 @@ class AgentOrchestrator:
                 "needs_clarification": intent == "clarification_needed",
                 "reasoning": classification.get("reasoning", ""),
                 "source": "llm_intent_classifier",
-                "context": classification.get("context", "")
+                "context": classification.get("context", ""),
+                "is_follow_up": is_follow_up
             }
 
-
-            if (intent != "follow_up"):
-             # 3. Check for ambiguous questions, but be very permissive with follow-ups
-                is_ambiguous, clarification_msg, example = self._detect_ambiguity(query)
-                if is_ambiguous:
+            # Skip ambiguity check for follow-ups and greetings
+            if intent not in ["follow_up", "greeting"]:
+                is_ambiguous, clarification_msg, example = self._detect_ambiguity(query, is_follow_up=is_follow_up)
+                if is_ambiguous and not is_follow_up:  # Don't mark follow-ups as ambiguous
                     state["intent"] = "response"
                     state["response"] = f"{clarification_msg}\n\n{example}"
                     state["metadata"]["intent_classification"] = {

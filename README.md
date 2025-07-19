@@ -71,6 +71,13 @@ docker-compose logs -f qdrant
 
 ## Documentation
 
+### Core Architecture
 - [System Architecture Overview](docs/ARCHITECTURE_OVERVIEW.md) - High-level overview of system components and technologies
 - [Agent Orchestration](docs/AGENT_ORCHESTRATION.md) - How agents work together to process queries
+- [Intent Clarification](docs/INTENT_CLARIFICATION.md) - How the system handles ambiguous queries
 - [Data Ingestion](docs/DATA_INGESTION.md) - Details on how documents are processed and indexed
+
+### Agent Documentation
+- [Response Agent](docs/RESPONSE_AGENT.md) - Formats and presents search results to users
+- [Web Search Agent](docs/WEB_SEARCH_AGENT.md) - Handles web search functionality
+- [PDF Query Agent](docs/PDF_QUERY_AGENT.md) - Processes and retrieves information from PDF documents

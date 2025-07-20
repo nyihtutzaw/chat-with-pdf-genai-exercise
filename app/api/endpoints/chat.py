@@ -41,14 +41,7 @@ def _format_conversation_history(messages: list) -> list:
     return formatted_messages
 
 async def _process_with_agent(conversation, message: str, session_id: str, force_web_search: bool = False) -> dict:
-    """Process a message through the agent workflow.
-    
-    Args:
-        conversation: The conversation object
-        message: The user's message
-        session_id: The conversation session ID
-        force_web_search: If True, forces a web search regardless of message content
-    """
+  
     try:
         result = await agent_orchestrator.process_message(
             message=message,
@@ -101,23 +94,6 @@ def _create_error_response(request_id: str, chat_request: ChatRequest, error: st
     }
 
 async def _process_chat_request(chat_request: ChatRequest) -> Dict[str, Any]:
-    """Process a chat request using the agent workflow.
-    
-    This function:
-    1. Gets or creates a conversation session
-    2. Processes the user's message through the agent workflow
-    3. Updates the conversation history
-    4. Returns a properly formatted response
-    
-    Args:
-        chat_request: The incoming chat request with message and metadata
-        
-    Returns:
-        A dictionary with all fields required by the ChatResponse model
-        
-    Raises:
-        HTTPException: If there's an error processing the request
-    """
     request_id = str(uuid.uuid4())[:8]
     logger.info("Processing request ID %s: %s", request_id, chat_request.message)
     

@@ -88,7 +88,7 @@ The system classifies user intents into the following categories:
 ### Implementation
 
 - **Search Integration**: Direct DuckDuckGo API calls
-- **Result Processing**: Result filtering and ranking
+- **Result Processing**: Result filtering and limiting
 - **Performance**: Asynchronous processing
 
 ## PDF Query Agent
@@ -98,7 +98,6 @@ The system classifies user intents into the following categories:
 - **Storage**: Local filesystem with organized directory structure
 - **PDF Processing**: PyPDF2 for text extraction
 - **Document Formats**: Support for PDF
-- **Metadata Management**: Custom schema with file hashing for deduplication
 
 ### Search Capabilities
 

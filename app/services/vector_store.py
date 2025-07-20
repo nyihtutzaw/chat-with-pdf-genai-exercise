@@ -220,24 +220,5 @@ class VectorStore:
             except Exception as inner_e:
                 logger.error(f"Fallback search also failed: {str(inner_e)}")
                 return []
-    
-    def clear_collection(self) -> bool:
-        """Clear all vectors from the collection."""
-        try:
-            self.client.delete_collection(collection_name=self.collection_name)
-            self._ensure_collection()  # Recreate the collection
-            return True
-        except Exception as e:
-            logger.error(f"Error clearing collection: {str(e)}")
-            return False
-
-    def delete_collection(self):
-        """Delete the entire collection."""
-        try:
-            self.client.delete_collection(collection_name=self.collection_name)
-            logger.info(f"Collection '{self.collection_name}' deleted successfully")
-        except Exception as e:
-            logger.error(f"Error deleting collection '{self.collection_name}': {str(e)}")
-            raise
 
 vector_store = VectorStore()

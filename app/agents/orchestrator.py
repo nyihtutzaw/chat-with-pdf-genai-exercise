@@ -244,18 +244,6 @@ class AgentOrchestrator:
 
 
     async def _classify_intent_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """Node function for intent classification using LLM.
-        
-        This node:
-        1. If force_web_search is True, goes to web search
-        2. Otherwise, checks for ambiguous questions
-        3. Uses LLM to classify the intent
-           - greeting: Returns a greeting response such as the message is hi, how are you, good moring, etc
-           - pdf_query: Routes to PDF query handler
-           - web_search: Routes to web search
-           - follow_up: Handles follow-up questions using conversation context
-           - clarification_needed: Asks for clarification
-        """
       
         state = self._initialize_intent_state(state)
         

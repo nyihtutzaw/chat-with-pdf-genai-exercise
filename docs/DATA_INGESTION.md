@@ -55,7 +55,6 @@ Orchestrates the end-to-end PDF ingestion process.
    - Checks for previously processed documents
 
 2. **Document Processing**:
-   - Processes PDFs in parallel (if enabled)
    - Tracks progress and handles errors
    - Maintains status of processed files
 
@@ -95,36 +94,6 @@ BATCH_SIZE=32          # Number of chunks to process in a batch
 MAX_RETRIES=3          # Number of retry attempts for failed operations
 ```
 
-## Usage
-
-### Running the Ingestion Process
-
-1. Place PDF files in the `data/pdfs` directory
-2. Run the ingestion script:
-   ```bash
-   python scripts/ingest_pdfs.py
-   ```
-
-### Command Line Options
-
-```
-usage: ingest_pdfs.py [-h] [--input-dir INPUT_DIR] [--chunk-size CHUNK_SIZE]
-                     [--chunk-overlap CHUNK_OVERLAP] [--batch-size BATCH_SIZE]
-                     [--force]
-
-optional arguments:
-  -h, --help            show this help message and exit
-  --input-dir INPUT_DIR
-                        Directory containing PDF files to process
-  --chunk-size CHUNK_SIZE
-                        Size of text chunks (default: 1000)
-  --chunk-overlap CHUNK_OVERLAP
-                        Overlap between chunks (default: 200)
-  --batch-size BATCH_SIZE
-                        Number of chunks to process in a batch (default: 32)
-  --force               Force re-ingestion of all files
-```
-
 ## Best Practices
 
 1. **Document Preparation**:
@@ -141,25 +110,6 @@ optional arguments:
    - Check logs for failed processing
    - Use the `--force` flag to retry failed documents
    - Monitor storage usage with large document collections
-
-## Troubleshooting
-
-Common issues and solutions:
-
-- **Memory Issues**:
-  - Reduce batch size
-  - Process fewer documents at once
-  - Increase system swap space
-
-- **Processing Failures**:
-  - Check PDF file integrity
-  - Verify read permissions
-  - Ensure sufficient disk space
-
-- **Search Quality**:
-  - Adjust chunk size and overlap
-  - Consider different embedding models
-  - Review text extraction quality
 
 ## Monitoring
 

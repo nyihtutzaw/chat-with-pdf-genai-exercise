@@ -34,7 +34,6 @@ flowchart TD
 
 ### 1. Ambiguity Detection
 
-The system uses multiple techniques to detect ambiguous queries:
 
 #### Pattern Matching
 - **Short/Incomplete Queries**: Queries with 3 or fewer words (excluding common greetings)
@@ -42,11 +41,6 @@ The system uses multiple techniques to detect ambiguous queries:
 - **Vague Quality Terms**: Words like "good", "bad", "better", "worse" without clear context
 - **Incomplete Questions**: Questions that don't specify what information is being requested
 
-#### LLM-based Analysis
-For more complex cases, the system can use the LLM to analyze:
-- Whether the query is a follow-up to previous messages
-- If the query contains ambiguous references
-- If additional context is needed to provide a meaningful response
 
 ### 2. Clarification Process
 
@@ -60,6 +54,7 @@ When ambiguity is detected:
 ### 3. Follow-up Handling
 
 Special handling for follow-up questions:
+- Use LLM to analyze the query and determine if it is a follow-up question and analyze previous conversation history
 - Skips ambiguity checks for follow-up questions
 - Maintains context from previous interactions
 - Routes to the same agent that handled the original query

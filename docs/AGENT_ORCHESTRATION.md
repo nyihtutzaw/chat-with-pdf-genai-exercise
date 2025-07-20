@@ -111,25 +111,15 @@ flowchart TD
 - For complex queries, may engage multiple agents in sequence
 - Handles special cases like follow-up questions
 
-### 4. Parallel Processing (When Applicable)
-- For queries requiring multiple data sources, initiates parallel processing
-- Coordinates between different agents
-- Aggregates results from multiple sources
-- Manages timeouts and partial failures
 
-### 5. Context Management
-- Maintains conversation context across turns
-- Tracks entities, topics, and user preferences
-- Handles coreference resolution (e.g., pronouns)
-- Manages conversation state transitions
 
-### 6. Response Generation
+### 4. Response Generation
 - Collects and processes results from agents
 - Applies response formatting and templating
 - Ensures consistent output format
 - Adds relevant metadata and source attribution
 
-### 7. Error Handling & Fallbacks
+### 5. Error Handling & Fallbacks
 - Detects and handles agent failures
 - Provides meaningful error messages
 - Falls back to alternative strategies when primary methods fail
@@ -144,8 +134,7 @@ flowchart TD
 5. **Response Generation**: Maintains conversation flow by referencing previous context in responses
 
 ### Multi-Agent Collaboration
-1. Identifies queries requiring multiple agents
-2. Coordinates parallel execution
+1. Identifies queries requiring multiple agents (for eg, clarification -> pdf_query agent)
 
 
 *This document provides a high-level overview of the agent orchestration flow. For implementation details, please refer to the source code and related documentation.*

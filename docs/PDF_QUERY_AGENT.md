@@ -93,8 +93,3 @@ results = updated_state["search_results"]
 - Only processes text content from PDFs (no images or complex layouts)
 - Relies on the quality of the vector embeddings for search relevance
 - No built-in support for document updates or deletions
-
-## Related Components
-- [Agent Orchestration](../docs/AGENT_ORCHESTRATION.md)
-- [Vector Store Documentation](../docs/VECTOR_STORE.md)
-- [Base Agent Implementation](../app/agents/base.py)
